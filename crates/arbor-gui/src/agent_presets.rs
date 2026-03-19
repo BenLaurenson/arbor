@@ -362,8 +362,9 @@ impl ArborWindow {
             session.updated_at_unix_ms = current_unix_timestamp_millis();
         }
 
-        // Add terminal to the Hub layout
+        // Add terminal to the Hub layout and keep Hub as active view
         self.hub_add_terminal(session_id, cx);
+        self.hub_tab_active = true;
 
         self.sync_daemon_session_store(cx);
         cx.notify();

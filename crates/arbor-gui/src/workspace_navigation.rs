@@ -1795,8 +1795,14 @@ impl ArborWindow {
             session.updated_at_unix_ms = current_unix_timestamp_millis();
         }
 
-        // Add terminal to the Hub layout
+        // Add terminal to the Hub layout and keep Hub as active view
         self.hub_add_terminal(terminal_id, cx);
+        self.hub_tab_active = true;
+        // Remove from standalone terminal tab tracking so it only shows in Hub
+        if let Some(worktree) = self.worktrees.get(worktree_index) {
+            self.active_terminal_by_worktree
+                .remove(&worktree.path);
+        }
 
         self.sync_daemon_session_store(cx);
         cx.notify();
