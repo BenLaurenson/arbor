@@ -683,6 +683,9 @@ impl ArborWindow {
     }
 
     pub(crate) fn active_center_tab_for_selected_worktree(&self) -> Option<CenterTab> {
+        if self.hub_tab_active {
+            return Some(CenterTab::Hub);
+        }
         if self.logs_tab_active {
             return Some(CenterTab::Logs);
         }

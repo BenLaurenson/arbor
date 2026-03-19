@@ -653,27 +653,34 @@ impl ArborWindow {
             })
             .on_click(cx.listener(move |this, _, window, cx| match tab {
                 CenterTab::Hub => {
+                    this.hub_tab_active = true;
                     this.logs_tab_active = false;
                     this.active_diff_session_id = None;
+                    this.active_file_view_session_id = None;
                     cx.notify();
                 },
                 CenterTab::Terminal(session_id) => {
+                    this.hub_tab_active = false;
                     this.logs_tab_active = false;
                     this.select_terminal(session_id, window, cx);
                 },
                 CenterTab::Diff(diff_id) => {
+                    this.hub_tab_active = false;
                     this.logs_tab_active = false;
                     this.select_diff_tab(diff_id, cx);
                 },
                 CenterTab::FileView(fv_id) => {
+                    this.hub_tab_active = false;
                     this.logs_tab_active = false;
                     this.select_file_view_tab(fv_id, cx);
                 },
                 CenterTab::AgentChat(local_id) => {
+                    this.hub_tab_active = false;
                     this.logs_tab_active = false;
                     this.select_agent_chat_tab(local_id, cx);
                 },
                 CenterTab::Logs => {
+                    this.hub_tab_active = false;
                     this.logs_tab_active = true;
                     this.active_diff_session_id = None;
                     this.sync_navigation_ui_state_store(cx);

@@ -2474,6 +2474,7 @@ pub(crate) struct ArborWindow {
     pub(crate) log_auto_scroll: bool,
     pub(crate) logs_tab_open: bool,
     pub(crate) logs_tab_active: bool,
+    pub(crate) hub_tab_active: bool,
     pub(crate) quit_overlay_until: Option<Instant>,
     pub(crate) quit_after_persistence_flush: bool,
     pub(crate) ime_marked_text: Option<String>,
