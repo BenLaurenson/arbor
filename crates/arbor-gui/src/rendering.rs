@@ -64,6 +64,34 @@ impl EntityInputHandler for ArborWindow {
             return;
         }
         // When a modal with a text field is open, route IME text there instead
+        if let Some(ref mut modal) = self.repo_settings_modal {
+            let (field, cursor) = match modal.tab {
+                RepoSettingsTab::General => match modal.active_field {
+                    0 => (&mut modal.label, &mut modal.label_cursor),
+                    1 => (&mut modal.custom_url, &mut modal.custom_url_cursor),
+                    _ => (
+                        &mut modal.quick_launch_command,
+                        &mut modal.quick_launch_command_cursor,
+                    ),
+                },
+                RepoSettingsTab::Branch => {
+                    (&mut modal.branch_prefix, &mut modal.branch_prefix_cursor)
+                },
+                RepoSettingsTab::Agent => (
+                    &mut modal.agent_default_preset,
+                    &mut modal.agent_default_preset_cursor,
+                ),
+                RepoSettingsTab::Notifications => (
+                    &mut modal.notifications_webhook_url,
+                    &mut modal.notifications_webhook_url_cursor,
+                ),
+            };
+            field.insert_str(*cursor, text);
+            *cursor += text.len();
+            modal.error = None;
+            cx.notify();
+            return;
+        }
         if let Some(ref mut modal) = self.daemon_auth_modal {
             modal.token.push_str(text);
             modal.error = None;
@@ -168,7 +196,12 @@ impl Render for ArborWindow {
         window.set_window_title(&title);
 
         self.window_is_active = window.is_window_active();
-        if self.focus_terminal_on_next_render && self.active_terminal().is_some() {
+        let has_modal_overlay =
+            self.repo_settings_modal.is_some() || self.repo_icon_preview.is_some();
+        if self.focus_terminal_on_next_render
+            && self.active_terminal().is_some()
+            && !has_modal_overlay
+        {
             window.focus(&self.terminal_focus);
             self.focus_terminal_on_next_render = false;
         }
@@ -248,7 +281,10 @@ impl Render for ArborWindow {
             .child(self.render_github_auth_modal(cx))
             .child(self.render_new_tab_menu(cx))
             .child(self.render_repository_context_menu(cx))
+            .child(self.render_repo_icon_preview_modal(cx))
+            .child(self.render_repo_settings_modal(cx))
             .child(self.render_worktree_context_menu(cx))
+            .child(self.render_session_context_menu(cx))
             .child(self.render_worktree_hover_popover(cx))
             .child(self.render_outpost_context_menu(cx))
             .child(self.render_delete_modal(cx))

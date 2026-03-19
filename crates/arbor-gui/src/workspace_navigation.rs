@@ -722,7 +722,7 @@ impl ArborWindow {
             .map(CenterTab::Terminal)
     }
 
-    pub(crate) fn ensure_selected_worktree_terminal(&mut self, cx: &mut Context<Self>) -> bool {
+    pub(crate) fn ensure_selected_worktree_terminal(&mut self, _cx: &mut Context<Self>) -> bool {
         // Don't auto-spawn local terminals when an outpost is selected;
         // outpost terminals are created explicitly via spawn_outpost_terminal.
         if self.active_outpost_index.is_some() {
@@ -749,7 +749,7 @@ impl ArborWindow {
                 );
                 return true;
             }
-            return self.spawn_terminal_session_inner(false, cx);
+            return false;
         }
 
         if let Some(session_id) = self.active_terminal_id_for_worktree(&worktree_path) {
@@ -1288,6 +1288,7 @@ impl ArborWindow {
     pub(crate) fn select_repository(&mut self, index: usize, cx: &mut Context<Self>) {
         self.repository_context_menu = None;
         self.worktree_context_menu = None;
+        self.session_context_menu = None;
         let Some(repository) = self.repositories.get(index).cloned() else {
             return;
         };
@@ -1751,6 +1752,44 @@ impl ArborWindow {
         cx.notify();
     }
 
+    pub(crate) fn resume_agent_session(
+        &mut self,
+        worktree_index: usize,
+        session_id: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.select_worktree(worktree_index, window, cx);
+
+        let command = format!("claude --resume {session_id}\n");
+        let terminal_count_before = self.terminals.len();
+        self.spawn_terminal_session(window, cx);
+        if self.terminals.len() <= terminal_count_before {
+            return;
+        }
+
+        let Some(terminal_id) = self.terminals.last().map(|s| s.id) else {
+            return;
+        };
+
+        if let Err(error) = self.write_input_to_terminal(terminal_id, command.as_bytes()) {
+            self.notice = Some(format!("failed to resume session: {error}"));
+            cx.notify();
+            return;
+        }
+
+        if let Some(session) = self.terminals.iter_mut().find(|s| s.id == terminal_id) {
+            session.agent_preset = Some(AgentPresetKind::Claude);
+            session.execution_mode = Some(self.execution_mode);
+            session.last_command = Some(command);
+            session.pending_command.clear();
+            session.updated_at_unix_ms = current_unix_timestamp_millis();
+        }
+
+        self.sync_daemon_session_store(cx);
+        cx.notify();
+    }
+
     pub(crate) fn select_worktree(
         &mut self,
         index: usize,
@@ -1759,6 +1798,7 @@ impl ArborWindow {
     ) {
         self.repository_context_menu = None;
         self.worktree_context_menu = None;
+        self.session_context_menu = None;
         self._hover_show_task = None;
         self.worktree_hover_popover = None;
         self.active_remote_worktree = None;
@@ -1798,6 +1838,7 @@ impl ArborWindow {
         cx.notify();
     }
 
+    #[allow(dead_code)]
     pub(crate) fn show_worktree_hover_popover(
         &mut self,
         index: usize,
@@ -1874,6 +1915,7 @@ impl ArborWindow {
         }));
     }
 
+    #[allow(dead_code)]
     pub(crate) fn schedule_worktree_hover_popover_show(
         &mut self,
         worktree_index: usize,
@@ -1909,6 +1951,7 @@ impl ArborWindow {
     ) {
         self.repository_context_menu = None;
         self.worktree_context_menu = None;
+        self.session_context_menu = None;
         self._hover_show_task = None;
         self.worktree_hover_popover = None;
         self.close_top_bar_worktree_quick_actions();

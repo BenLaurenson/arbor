@@ -427,6 +427,7 @@ mod tests {
             recent_turns: vec![],
             stuck_turn_count: 0,
             recent_agent_sessions: vec![],
+            agent_sessions_last_fetched: None,
             agent_state: None,
             agent_task: None,
             last_activity_unix_ms: None,

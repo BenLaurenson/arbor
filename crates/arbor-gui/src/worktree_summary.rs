@@ -43,6 +43,7 @@ impl WorktreeSummary {
             recent_turns: Vec::new(),
             stuck_turn_count: 0,
             recent_agent_sessions: Vec::new(),
+            agent_sessions_last_fetched: None,
             agent_state: None,
             agent_task: None,
             last_activity_unix_ms,
@@ -83,6 +84,7 @@ impl RepositorySummary {
         let avatar_url = github_repo_slug
             .as_ref()
             .and_then(|repo_slug| github_avatar_url_for_repo_slug(repo_slug));
+        let repo_web_url = repo_web_url_for_repo(&root);
 
         Self {
             group_key,
@@ -91,6 +93,7 @@ impl RepositorySummary {
             label,
             avatar_url,
             github_repo_slug,
+            repo_web_url,
         }
     }
 
@@ -133,6 +136,7 @@ pub(crate) mod tests {
             recent_turns: vec![],
             stuck_turn_count: 0,
             recent_agent_sessions: vec![],
+            agent_sessions_last_fetched: None,
             agent_state: Some(AgentState::Working),
             agent_task: Some("Investigating hover".to_owned()),
             last_activity_unix_ms: None,

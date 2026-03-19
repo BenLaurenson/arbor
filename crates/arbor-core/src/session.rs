@@ -4,7 +4,7 @@ use std::{
     io::{self, BufRead},
     path::{Path, PathBuf},
     process::Command,
-    time::UNIX_EPOCH,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 pub const DEFAULT_RECENT_AGENT_SESSION_LIMIT: usize = 6;
@@ -44,6 +44,38 @@ pub struct AgentSessionSummary {
     pub title: String,
     pub timestamp_unix_ms: Option<u64>,
     pub message_count: usize,
+    /// Human-readable session name (e.g. "delegated-jumping-glade").
+    /// Currently only populated for Claude sessions.
+    pub slug: Option<String>,
+    /// Whether the session file was modified within the last 60 seconds.
+    pub is_active: bool,
+}
+
+const ACTIVE_SESSION_THRESHOLD_MS: u128 = 60_000;
+
+/// Returns a display name for a session: the slug if available, otherwise
+/// `"Session: {first 8 chars of id}"`.
+pub fn session_display_name(summary: &AgentSessionSummary) -> String {
+    match &summary.slug {
+        Some(slug) => slug.clone(),
+        None => {
+            let short = if summary.id.len() >= 8 {
+                &summary.id[..8]
+            } else {
+                &summary.id
+            };
+            format!("Session: {short}")
+        },
+    }
+}
+
+fn is_session_recently_active(path: &Path) -> bool {
+    file_modified_unix_ms(path)
+        .and_then(|mtime| {
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
+            Some(u128::from(mtime) + ACTIVE_SESSION_THRESHOLD_MS > now.as_millis())
+        })
+        .unwrap_or(false)
 }
 
 pub trait AgentSessionProvider {
@@ -229,6 +261,7 @@ fn parse_claude_session_summary(path: &Path) -> Option<AgentSessionSummary> {
     let file = fs::File::open(path).ok()?;
     let reader = io::BufReader::new(file);
     let mut title = None;
+    let mut slug = None;
     let mut message_count = 0usize;
 
     for line in reader.lines() {
@@ -242,6 +275,12 @@ fn parse_claude_session_summary(path: &Path) -> Option<AgentSessionSummary> {
                 message_count += 1;
                 if title.is_none() {
                     title = extract_claude_prompt_from_value(&value);
+                }
+                if slug.is_none() {
+                    slug = value
+                        .get("slug")
+                        .and_then(|v| v.as_str())
+                        .map(ToOwned::to_owned);
                 }
             },
             Some("assistant") => {
@@ -257,6 +296,8 @@ fn parse_claude_session_summary(path: &Path) -> Option<AgentSessionSummary> {
         title: title?,
         timestamp_unix_ms: file_modified_unix_ms(path),
         message_count,
+        slug,
+        is_active: is_session_recently_active(path),
     })
 }
 
@@ -324,6 +365,8 @@ fn parse_pi_session_summary(path: &Path) -> Option<AgentSessionSummary> {
         title: title?,
         timestamp_unix_ms: file_modified_unix_ms(path),
         message_count,
+        slug: None,
+        is_active: is_session_recently_active(path),
     })
 }
 
@@ -431,6 +474,8 @@ fn parse_codex_session_summary(path: &Path, worktree_path: &Path) -> Option<Agen
         title: event_title.or(response_title)?,
         timestamp_unix_ms: file_modified_unix_ms(path),
         message_count: response_message_count.max(event_message_count),
+        slug: None,
+        is_active: is_session_recently_active(path),
     })
 }
 
@@ -546,19 +591,31 @@ fn parse_opencode_session_entry(
         })
         .unwrap_or(0);
 
+    let timestamp_unix_ms = json_u64(entry, &[
+        "updatedAtUnixMs",
+        "updated_at_unix_ms",
+        "updatedAt",
+        "createdAtUnixMs",
+        "created_at_unix_ms",
+        "createdAt",
+    ]);
+    let is_active = timestamp_unix_ms
+        .map(|ts| {
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .ok()
+                .is_some_and(|now| u128::from(ts) + ACTIVE_SESSION_THRESHOLD_MS > now.as_millis())
+        })
+        .unwrap_or(false);
+
     Some(AgentSessionSummary {
         provider: AgentSessionProviderKind::OpenCode,
         id,
         title,
-        timestamp_unix_ms: json_u64(entry, &[
-            "updatedAtUnixMs",
-            "updated_at_unix_ms",
-            "updatedAt",
-            "createdAtUnixMs",
-            "created_at_unix_ms",
-            "createdAt",
-        ]),
+        timestamp_unix_ms,
         message_count,
+        slug: None,
+        is_active,
     })
 }
 
@@ -795,6 +852,49 @@ mod tests {
         fs::write(&file_path, content).unwrap();
         let result = extract_pi_user_prompt(&file_path);
         assert_eq!(result.as_deref(), Some("summarize recent changes"));
+    }
+
+    #[test]
+    fn parse_claude_session_summary_extracts_slug() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("test-session.jsonl");
+        let content = r#"{"type":"progress","slug":null}
+{"type":"user","message":{"role":"user","content":"fix the login bug"},"slug":"unified-noodling-prism"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"OK"}]},"slug":"unified-noodling-prism"}
+"#;
+        fs::write(&file_path, content).unwrap();
+
+        let summary =
+            parse_claude_session_summary(&file_path).unwrap_or_else(|| panic!("summary expected"));
+        assert_eq!(summary.slug.as_deref(), Some("unified-noodling-prism"));
+    }
+
+    #[test]
+    fn session_display_name_uses_slug_when_available() {
+        let session = AgentSessionSummary {
+            provider: AgentSessionProviderKind::Claude,
+            id: "e1b8aae2-2a33-4402-a8f5-886c4d4da370".to_owned(),
+            title: "fix something".to_owned(),
+            timestamp_unix_ms: None,
+            message_count: 3,
+            slug: Some("delegated-jumping-glade".to_owned()),
+            is_active: false,
+        };
+        assert_eq!(session_display_name(&session), "delegated-jumping-glade");
+    }
+
+    #[test]
+    fn session_display_name_falls_back_to_short_id() {
+        let session = AgentSessionSummary {
+            provider: AgentSessionProviderKind::Codex,
+            id: "e1b8aae2-2a33-4402-a8f5-886c4d4da370".to_owned(),
+            title: "fix something".to_owned(),
+            timestamp_unix_ms: None,
+            message_count: 3,
+            slug: None,
+            is_active: false,
+        };
+        assert_eq!(session_display_name(&session), "Session: e1b8aae2");
     }
 
     #[test]

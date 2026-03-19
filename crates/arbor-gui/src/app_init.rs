@@ -110,6 +110,10 @@ impl ArborWindow {
                 let repository_sidebar_tabs = startup_ui_state.repository_sidebar_tabs.clone();
                 let startup_collapsed_repository_groups =
                     startup_ui_state.collapsed_repository_group_keys.clone();
+                let startup_custom_repo_icons = startup_ui_state.custom_repo_icons.clone();
+                let startup_custom_repo_labels = startup_ui_state.custom_repo_labels.clone();
+                let startup_custom_repo_urls = startup_ui_state.custom_repo_urls.clone();
+                let startup_quick_launch_commands = startup_ui_state.quick_launch_commands.clone();
                 let configured_embedded_shell = loaded_config.config.embedded_shell.clone();
                 let notifications_enabled = loaded_config.config.notifications.unwrap_or(true);
                 let remote_hosts: Vec<arbor_core::outpost::RemoteHost> = loaded_config
@@ -329,7 +333,15 @@ impl ArborWindow {
                     new_tab_menu_position: None,
                     repository_context_menu: None,
                     worktree_context_menu: None,
+                    session_context_menu: None,
+                    inactive_sessions_expanded: HashSet::new(),
                     worktree_hover_popover: None,
+                    custom_repo_icons: startup_custom_repo_icons,
+                    custom_repo_labels: startup_custom_repo_labels,
+                    custom_repo_urls: startup_custom_repo_urls,
+                    quick_launch_commands: startup_quick_launch_commands,
+                    repo_icon_preview: None,
+                    repo_settings_modal: None,
                     _hover_show_task: None,
                     _hover_dismiss_task: None,
                     _worktree_refresh_task: None,
@@ -585,6 +597,10 @@ impl ArborWindow {
         let repository_sidebar_tabs = startup_ui_state.repository_sidebar_tabs.clone();
         let startup_collapsed_repository_groups =
             startup_ui_state.collapsed_repository_group_keys.clone();
+        let startup_custom_repo_icons = startup_ui_state.custom_repo_icons.clone();
+        let startup_custom_repo_labels = startup_ui_state.custom_repo_labels.clone();
+        let startup_custom_repo_urls = startup_ui_state.custom_repo_urls.clone();
+        let startup_quick_launch_commands = startup_ui_state.quick_launch_commands.clone();
         let configured_embedded_shell = loaded_config.config.embedded_shell.clone();
         let notifications_enabled = loaded_config.config.notifications.unwrap_or(true);
         let startup_right_pane_tab = right_pane_tab_from_persisted(startup_ui_state.right_pane_tab);
@@ -738,7 +754,15 @@ impl ArborWindow {
             new_tab_menu_position: None,
             repository_context_menu: None,
             worktree_context_menu: None,
+            session_context_menu: None,
+            inactive_sessions_expanded: HashSet::new(),
             worktree_hover_popover: None,
+            custom_repo_icons: startup_custom_repo_icons,
+            custom_repo_labels: startup_custom_repo_labels,
+            custom_repo_urls: startup_custom_repo_urls,
+            repo_icon_preview: None,
+            repo_settings_modal: None,
+            quick_launch_commands: startup_quick_launch_commands,
             _hover_show_task: None,
             _hover_dismiss_task: None,
             _worktree_refresh_task: None,

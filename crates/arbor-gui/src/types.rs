@@ -93,6 +93,7 @@ pub(crate) struct WorktreeSummary {
     pub(crate) recent_turns: Vec<AgentTurnSnapshot>,
     pub(crate) stuck_turn_count: usize,
     pub(crate) recent_agent_sessions: Vec<arbor_core::session::AgentSessionSummary>,
+    pub(crate) agent_sessions_last_fetched: Option<Instant>,
     pub(crate) agent_state: Option<AgentState>,
     pub(crate) agent_task: Option<String>,
     pub(crate) last_activity_unix_ms: Option<u64>,
@@ -143,6 +144,8 @@ pub(crate) struct RepositorySummary {
     pub(crate) label: String,
     pub(crate) avatar_url: Option<String>,
     pub(crate) github_repo_slug: Option<String>,
+    /// Auto-detected web URL for the repo (GitHub, ADO, GitLab, etc.)
+    pub(crate) repo_web_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -2133,6 +2136,58 @@ pub(crate) struct OutpostContextMenu {
     pub(crate) position: gpui::Point<Pixels>,
 }
 
+pub(crate) struct SessionContextMenu {
+    pub(crate) worktree_index: usize,
+    pub(crate) session_id: String,
+    pub(crate) position: gpui::Point<Pixels>,
+}
+
+pub(crate) struct RepoSettingsModal {
+    pub(crate) repository_index: usize,
+    pub(crate) group_key: String,
+    pub(crate) repo_root: PathBuf,
+    pub(crate) tab: RepoSettingsTab,
+    /// General tab: display label override
+    pub(crate) label: String,
+    pub(crate) label_cursor: usize,
+    /// General tab: custom URL
+    pub(crate) custom_url: String,
+    pub(crate) custom_url_cursor: usize,
+    /// General tab: quick launch command
+    pub(crate) quick_launch_command: String,
+    pub(crate) quick_launch_command_cursor: usize,
+    /// Branch tab
+    pub(crate) branch_prefix_mode: Option<repo_config::RepoBranchPrefixMode>,
+    pub(crate) branch_prefix: String,
+    pub(crate) branch_prefix_cursor: usize,
+    /// Agent tab
+    pub(crate) agent_default_preset: String,
+    pub(crate) agent_default_preset_cursor: usize,
+    pub(crate) agent_auto_checkpoint: bool,
+    /// Notifications tab
+    pub(crate) notifications_desktop: bool,
+    pub(crate) notifications_webhook_url: String,
+    pub(crate) notifications_webhook_url_cursor: usize,
+    /// Active input field for keyboard navigation
+    pub(crate) active_field: usize,
+    pub(crate) error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RepoSettingsTab {
+    General,
+    Branch,
+    Agent,
+    Notifications,
+}
+
+pub(crate) struct RepoIconPreviewModal {
+    pub(crate) group_key: String,
+    pub(crate) source_path: PathBuf,
+    pub(crate) scale: f32,
+    pub(crate) error: Option<String>,
+}
+
 pub(crate) struct WorktreeHoverPopover {
     pub(crate) worktree_index: usize,
     /// Vertical position of the mouse when hover started (window coords).
@@ -2352,7 +2407,15 @@ pub(crate) struct ArborWindow {
     pub(crate) new_tab_menu_position: Option<gpui::Point<Pixels>>,
     pub(crate) repository_context_menu: Option<RepositoryContextMenu>,
     pub(crate) worktree_context_menu: Option<WorktreeContextMenu>,
+    pub(crate) session_context_menu: Option<SessionContextMenu>,
+    pub(crate) inactive_sessions_expanded: HashSet<usize>,
     pub(crate) worktree_hover_popover: Option<WorktreeHoverPopover>,
+    pub(crate) custom_repo_icons: HashMap<String, ui_state_store::CustomRepoIcon>,
+    pub(crate) custom_repo_labels: HashMap<String, String>,
+    pub(crate) custom_repo_urls: HashMap<String, String>,
+    pub(crate) quick_launch_commands: HashMap<String, String>,
+    pub(crate) repo_icon_preview: Option<RepoIconPreviewModal>,
+    pub(crate) repo_settings_modal: Option<RepoSettingsModal>,
     pub(crate) _hover_show_task: Option<gpui::Task<()>>,
     pub(crate) _hover_dismiss_task: Option<gpui::Task<()>>,
     pub(crate) _worktree_refresh_task: Option<gpui::Task<()>>,

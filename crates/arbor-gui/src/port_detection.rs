@@ -511,10 +511,6 @@ pub(crate) fn worktree_port_url(port: &DetectedPort) -> String {
     format!("http://{host}:{}", port.port)
 }
 
-pub(crate) fn worktree_port_badge_text(port: &DetectedPort) -> String {
-    format!(":{}", port.port)
-}
-
 pub(crate) fn worktree_port_detail_text(port: &DetectedPort) -> String {
     if let Some(label) = port
         .label

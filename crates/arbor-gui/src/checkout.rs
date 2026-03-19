@@ -32,6 +32,7 @@ impl CheckoutKind {
         }
     }
 
+    #[allow(dead_code)]
     pub fn icon(self) -> &'static str {
         match self {
             Self::LinkedWorktree => "\u{e725}",

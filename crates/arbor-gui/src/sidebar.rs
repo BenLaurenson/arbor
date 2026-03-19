@@ -1,11 +1,16 @@
 use super::*;
 
 impl ArborWindow {
+    const SUPPORTED_ICON_EXTENSIONS: &[&str] =
+        &["png", "jpg", "jpeg", "gif", "svg", "webp", "ico", "bmp"];
+
     pub(crate) fn render_left_pane(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         if !self.left_pane_visible {
             let theme = self.theme();
             let repositories = self.repositories.clone();
             let worktrees = self.worktrees.clone();
+            let custom_repo_icons = self.custom_repo_icons.clone();
+            let custom_repo_urls = self.custom_repo_urls.clone();
             let mut pane = div()
                 .id("collapsed-left-pane")
                 .w(px(40.))
@@ -30,123 +35,118 @@ impl ArborWindow {
                     .filter(|(_, w)| w.group_key == repository.group_key)
                     .collect();
 
-                // Add spacing between repo groups (not before the first)
+                // Divider between repo groups (not before the first)
                 if repo_index > 0 {
-                    pane = pane.child(div().h(px(4.)));
+                    pane = pane.child(div().w(px(24.)).h(px(1.)).bg(rgb(theme.border)).my_1());
                 }
 
-                // Repo icon row: circular avatar or GitHub icon
-                let repo_icon = match (repository.avatar_url.clone(), repository_github_url.clone())
-                {
-                    (Some(url), Some(github_url)) => div()
-                        .id(("collapsed-repository-github-link", repo_index))
-                        .size(px(32.))
-                        .rounded_md()
+                // Repo icon row: custom icon, circular avatar, or GitHub icon
+                // Prefer custom URL > GitHub URL for icon click target
+                let icon_click_url = custom_repo_urls
+                    .get(&repository.group_key)
+                    .cloned()
+                    .or_else(|| repository_github_url.clone())
+                    .or_else(|| repository.repo_web_url.clone());
+                let repo_icon = if let Some(custom) = custom_repo_icons.get(&repository.group_key) {
+                    let icon_scale = custom.scale;
+                    let mut icon_div = div()
+                        .id(("collapsed-custom-icon", repo_index))
+                        .size(px(28.))
+                        .rounded_full()
                         .overflow_hidden()
-                        .cursor_pointer()
-                        .hover(|this| this.opacity(0.9))
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.open_external_url(&github_url, cx);
-                            cx.stop_propagation();
-                        }))
-                        .child(img(url).size_full().rounded_md().with_fallback(move || {
-                            div()
-                                .size_full()
-                                .font_family(FONT_MONO)
-                                .text_size(px(14.))
-                                .text_color(rgb(theme.text_muted))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .child("\u{f09b}")
-                                .into_any_element()
-                        }))
-                        .into_any_element(),
-                    (Some(url), None) => div()
-                        .size(px(32.))
-                        .rounded_md()
-                        .overflow_hidden()
-                        .child(img(url).size_full().rounded_md().with_fallback(move || {
-                            div()
-                                .size_full()
-                                .font_family(FONT_MONO)
-                                .text_size(px(14.))
-                                .text_color(rgb(theme.text_muted))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .child("\u{f09b}")
-                                .into_any_element()
-                        }))
-                        .into_any_element(),
-                    (None, Some(github_url)) => div()
-                        .id(("collapsed-repository-github-link", repo_index))
-                        .size(px(24.))
-                        .font_family(FONT_MONO)
-                        .text_size(px(14.))
-                        .text_color(rgb(theme.text_muted))
                         .flex()
                         .items_center()
                         .justify_center()
-                        .cursor_pointer()
-                        .hover(|this| this.opacity(0.9))
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.open_external_url(&github_url, cx);
-                            cx.stop_propagation();
-                        }))
-                        .child("\u{f09b}")
-                        .into_any_element(),
-                    (None, None) => div()
-                        .size(px(24.))
-                        .font_family(FONT_MONO)
-                        .text_size(px(14.))
-                        .text_color(rgb(theme.text_muted))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .child("\u{f09b}")
-                        .into_any_element(),
+                        .child(
+                            img(PathBuf::from(&custom.path))
+                                .size(px(28. * icon_scale))
+                                .with_fallback(move || {
+                                    div()
+                                        .size(px(28.))
+                                        .font_family(FONT_MONO)
+                                        .text_size(px(14.))
+                                        .text_color(rgb(theme.text_muted))
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .child("\u{f03e}")
+                                        .into_any_element()
+                                }),
+                        );
+                    if let Some(url) = icon_click_url {
+                        icon_div = icon_div
+                            .cursor_pointer()
+                            .hover(|this| this.opacity(0.9))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.open_external_url(&url, cx);
+                                cx.stop_propagation();
+                            }));
+                    }
+                    icon_div.into_any_element()
+                } else {
+                    let default_click_url = icon_click_url.clone();
+                    // Build icon: avatar image or GitHub glyph
+                    let mut icon_div = if let Some(avatar) = repository.avatar_url.clone() {
+                        div()
+                            .id(("collapsed-repository-link", repo_index))
+                            .size(px(28.))
+                            .rounded_full()
+                            .overflow_hidden()
+                            .child(img(avatar).size_full().rounded_full().with_fallback(
+                                move || {
+                                    div()
+                                        .size_full()
+                                        .font_family(FONT_MONO)
+                                        .text_size(px(14.))
+                                        .text_color(rgb(theme.text_muted))
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .child("\u{f09b}")
+                                        .into_any_element()
+                                },
+                            ))
+                    } else {
+                        div()
+                            .id(("collapsed-repository-link", repo_index))
+                            .size(px(24.))
+                            .font_family(FONT_MONO)
+                            .text_size(px(14.))
+                            .text_color(rgb(theme.text_muted))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child("\u{f09b}")
+                    };
+                    if let Some(url) = default_click_url {
+                        icon_div = icon_div
+                            .cursor_pointer()
+                            .hover(|this| this.opacity(0.9))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.open_external_url(&url, cx);
+                                cx.stop_propagation();
+                            }));
+                    }
+                    icon_div.into_any_element()
                 };
                 pane = pane.child(repo_icon);
 
                 let selection_epoch = self.worktree_selection_epoch;
-                for (wt_index, worktree) in repo_worktrees {
+                for (wt_index, _worktree) in repo_worktrees {
                     let is_active = self.active_worktree_index == Some(wt_index);
-                    let first_char: String = worktree
-                        .branch
-                        .chars()
-                        .next()
-                        .unwrap_or('?')
-                        .to_uppercase()
-                        .collect();
 
+                    // Compact pill: thin horizontal bar instead of a letter
                     let cell = div()
                         .id(("collapsed-worktree", wt_index))
                         .cursor_pointer()
-                        .size(px(30.))
-                        .rounded_sm()
-                        .border_1()
-                        .border_color(rgb(if is_active {
+                        .w(px(24.))
+                        .h(px(4.))
+                        .rounded_full()
+                        .bg(rgb(if is_active {
                             theme.accent
                         } else {
-                            theme.border
+                            theme.text_disabled
                         }))
-                        .bg(rgb(if is_active {
-                            theme.panel_active_bg
-                        } else {
-                            theme.panel_bg
-                        }))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .text_xs()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(rgb(if is_active {
-                            theme.text_primary
-                        } else {
-                            theme.text_muted
-                        }))
-                        .child(first_char)
                         .on_click(cx.listener(move |this, _, window, cx| {
                             this.select_worktree(wt_index, window, cx);
                         }));
@@ -157,7 +157,7 @@ impl ArborWindow {
                             |el, delta| el.opacity(0.8 + 0.2 * delta),
                         ));
                     } else {
-                        pane = pane.child(cell.opacity(0.8));
+                        pane = pane.child(cell.opacity(0.5));
                     }
                 }
             }
@@ -239,6 +239,16 @@ impl ArborWindow {
                                 .flex()
                                 .flex_col()
                                 .gap_1()
+                                .when(repository_index > 0, |this| {
+                                    this.child(
+                                        div()
+                                            .w_full()
+                                            .h(px(1.))
+                                            .mx(px(4.))
+                                            .bg(rgb(theme.border))
+                                            .mb_1(),
+                                    )
+                                })
                                 .child(
                                     div()
                                         .id(("repository-row", repository_index))
@@ -248,6 +258,16 @@ impl ArborWindow {
                                         .h(px(32.))
                                         .on_click(cx.listener(move |this, _, _, cx| {
                                             this.select_repository(repository_index, cx);
+                                            // If collapsed, expand on click
+                                            if this
+                                                .collapsed_repositories
+                                                .contains(&repository_index)
+                                            {
+                                                this.collapsed_repositories
+                                                    .remove(&repository_index);
+                                                this.sync_collapsed_repositories_store(cx);
+                                                cx.notify();
+                                            }
                                         }))
                                         .on_mouse_down(MouseButton::Right, cx.listener(move |this, event: &MouseDownEvent, _, cx| {
                                             cx.stop_propagation();
@@ -257,106 +277,107 @@ impl ArborWindow {
                                             });
                                             cx.notify();
                                         }))
-                                        // GitHub icon or avatar outside the cell
+                                        // Custom icon, GitHub avatar, or GitHub icon
                                         .child(
-                                            match (
-                                                repository_avatar_url.clone(),
-                                                repository_github_url.clone(),
-                                            ) {
-                                                (Some(url), Some(github_url)) => div()
-                                                    .id((
-                                                        "repository-github-link",
-                                                        repository_index,
-                                                    ))
+                                            if let Some(custom) = self.custom_repo_icons.get(&repository.group_key) {
+                                                let icon_scale = custom.scale;
+                                                let expanded_click_url = self
+                                                    .custom_repo_urls
+                                                    .get(&repository.group_key)
+                                                    .cloned()
+                                                    .or_else(|| repository_github_url.clone())
+                                                    .or_else(|| repository.repo_web_url.clone());
+                                                let mut icon_div = div()
+                                                    .id(("expanded-custom-icon", repository_index))
                                                     .flex_none()
                                                     .size(px(20.))
-                                                    .rounded_sm()
+                                                    .rounded_full()
                                                     .overflow_hidden()
-                                                    .cursor_pointer()
-                                                    .hover(|this| this.opacity(0.9))
-                                                    .on_click(cx.listener(
-                                                        move |this, _, _, cx| {
-                                                            this.open_external_url(
-                                                                &github_url,
-                                                                cx,
-                                                            );
-                                                            cx.stop_propagation();
-                                                        },
-                                                    ))
+                                                    .flex()
+                                                    .items_center()
+                                                    .justify_center()
                                                     .child(
-                                                        img(url)
-                                                            .size_full()
-                                                            .rounded_sm()
+                                                        img(PathBuf::from(&custom.path))
+                                                            .size(px(20. * icon_scale))
                                                             .with_fallback(move || {
                                                                 div()
-                                                                    .size_full()
+                                                                    .size(px(20.))
                                                                     .font_family(FONT_MONO)
                                                                     .text_size(px(12.))
-                                                                    .text_color(rgb(
-                                                                        theme.text_muted,
-                                                                    ))
+                                                                    .text_color(rgb(theme.text_muted))
                                                                     .flex()
                                                                     .items_center()
                                                                     .justify_center()
-                                                                    .child("\u{f09b}")
+                                                                    .child("\u{f03e}")
                                                                     .into_any_element()
                                                             }),
-                                                    )
-                                                    .into_any_element(),
-                                                (Some(url), None) => div()
-                                                    .flex_none()
-                                                    .size(px(20.))
-                                                    .rounded_sm()
-                                                    .overflow_hidden()
-                                                    .child(
-                                                        img(url)
-                                                            .size_full()
-                                                            .rounded_sm()
-                                                            .with_fallback(move || {
-                                                                div()
-                                                                    .size_full()
-                                                                    .font_family(FONT_MONO)
-                                                                    .text_size(px(12.))
-                                                                    .text_color(rgb(
-                                                                        theme.text_muted,
-                                                                    ))
-                                                                    .flex()
-                                                                    .items_center()
-                                                                    .justify_center()
-                                                                    .child("\u{f09b}")
-                                                                    .into_any_element()
-                                                            }),
-                                                    )
-                                                    .into_any_element(),
-                                                (None, Some(github_url)) => div()
-                                                    .id((
-                                                        "repository-github-link",
-                                                        repository_index,
-                                                    ))
-                                                    .flex_none()
-                                                    .font_family(FONT_MONO)
-                                                    .text_size(px(12.))
-                                                    .text_color(rgb(theme.text_muted))
-                                                    .cursor_pointer()
-                                                    .hover(|this| this.opacity(0.9))
-                                                    .on_click(cx.listener(
-                                                        move |this, _, _, cx| {
-                                                            this.open_external_url(
-                                                                &github_url,
-                                                                cx,
-                                                            );
+                                                    );
+                                                if let Some(url) = expanded_click_url {
+                                                    icon_div = icon_div
+                                                        .cursor_pointer()
+                                                        .hover(|this| this.opacity(0.9))
+                                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                                            this.open_external_url(&url, cx);
                                                             cx.stop_propagation();
-                                                        },
-                                                    ))
-                                                    .child("\u{f09b}")
-                                                    .into_any_element(),
-                                                (None, None) => div()
-                                                    .flex_none()
-                                                    .font_family(FONT_MONO)
-                                                    .text_size(px(12.))
-                                                    .text_color(rgb(theme.text_muted))
-                                                    .child("\u{f09b}")
-                                                    .into_any_element(),
+                                                        }));
+                                                }
+                                                icon_div.into_any_element()
+                                            } else {
+                                                let exp_click_url = self
+                                                    .custom_repo_urls
+                                                    .get(&repository.group_key)
+                                                    .cloned()
+                                                    .or_else(|| repository_github_url.clone())
+                                                    .or_else(|| repository.repo_web_url.clone());
+                                                let mut default_icon = if let Some(avatar) =
+                                                    repository_avatar_url.clone()
+                                                {
+                                                    div()
+                                                        .id(("repository-link", repository_index))
+                                                        .flex_none()
+                                                        .size(px(20.))
+                                                        .rounded_sm()
+                                                        .overflow_hidden()
+                                                        .child(
+                                                            img(avatar)
+                                                                .size_full()
+                                                                .rounded_sm()
+                                                                .with_fallback(move || {
+                                                                    div()
+                                                                        .size_full()
+                                                                        .font_family(FONT_MONO)
+                                                                        .text_size(px(12.))
+                                                                        .text_color(rgb(
+                                                                            theme.text_muted,
+                                                                        ))
+                                                                        .flex()
+                                                                        .items_center()
+                                                                        .justify_center()
+                                                                        .child("\u{f09b}")
+                                                                        .into_any_element()
+                                                                }),
+                                                        )
+                                                } else {
+                                                    div()
+                                                        .id(("repository-link", repository_index))
+                                                        .flex_none()
+                                                        .font_family(FONT_MONO)
+                                                        .text_size(px(12.))
+                                                        .text_color(rgb(theme.text_muted))
+                                                        .child("\u{f09b}")
+                                                };
+                                                if let Some(url) = exp_click_url {
+                                                    default_icon = default_icon
+                                                        .cursor_pointer()
+                                                        .hover(|this| this.opacity(0.9))
+                                                        .on_click(cx.listener(
+                                                            move |this, _, _, cx| {
+                                                                this.open_external_url(&url, cx);
+                                                                cx.stop_propagation();
+                                                            },
+                                                        ));
+                                                }
+                                                default_icon.into_any_element()
                                             },
                                         )
                                         // Cell with chevron, name, count, etc.
@@ -443,19 +464,16 @@ impl ArborWindow {
                                                 &theme,
                                                 ("repository-add-worktree", repository_index),
                                             )
-                                                .on_click(cx.listener(move |this, _, _, cx| {
-                                                    if this.active_repository_index
-                                                        != Some(repository_index)
-                                                    {
-                                                        this.select_repository(repository_index, cx);
-                                                    }
-                                                    this.open_create_modal(
-                                                        repository_index,
-                                                        CreateModalTab::LocalWorktree,
-                                                        cx,
-                                                    );
-                                                    cx.stop_propagation();
-                                                })),
+                                                .on_click(cx.listener(
+                                                    move |this, _, window, cx| {
+                                                        this.quick_launch_agent(
+                                                            repository_index,
+                                                            window,
+                                                            cx,
+                                                        );
+                                                        cx.stop_propagation();
+                                                    },
+                                                )),
                                         ),
                                         )
                                 )
@@ -1217,515 +1235,393 @@ impl ArborWindow {
 
     pub(crate) fn render_repository_worktree_row(
         &self,
-        slot: usize,
-        group_key: &str,
-        repo_root: &Path,
+        _slot: usize,
+        _group_key: &str,
+        _repo_root: &Path,
         index: usize,
         worktree: WorktreeSummary,
-        selection_epoch: usize,
+        _selection_epoch: usize,
         compact_sidebar: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let theme = self.theme();
-        let is_active = self.active_worktree_index == Some(index);
         let diff_summary = worktree.diff_summary;
-        let show_pr_loading_indicator = should_show_worktree_pr_loading_indicator(&worktree);
-        let pr_number = worktree.pr_number;
-        let pr_url = worktree.pr_url.clone();
-        let is_merged_pr = worktree
-            .pr_details
-            .as_ref()
-            .is_some_and(|pr| pr.state == github_service::PrState::Merged);
-        let pr_badge_color = if is_merged_pr {
-            0xbb9af7_u32
-        } else {
-            theme.accent
-        };
         let branch_divergence = worktree.branch_divergence;
-        let pr_details = worktree.pr_details.clone();
-        let is_stuck = worktree.stuck_turn_count >= 2;
-        let is_primary = worktree.is_primary_checkout;
-        let attention = worktree_attention_indicator(&worktree);
-        let activity_sparkline = worktree_activity_sparkline(&worktree);
-        let detected_ports = worktree.detected_ports.clone();
-        let agent_dot_color = match worktree.agent_state {
-            Some(AgentState::Working) => Some(0xe5c07b_u32),
-            Some(AgentState::Waiting) => Some(0x61afef_u32),
-            None => None,
-        };
-        let drag_item_id = SidebarItemId::Worktree(worktree.path.clone());
-        let drag_group_key = group_key.to_owned();
-        let drop_group_key = group_key.to_owned();
-        let drop_repo_root = repo_root.to_path_buf();
-        let drag_label = worktree.branch.clone();
-        let drag_icon = worktree.checkout_kind.icon().to_owned();
-        let can_drop_group_key = drop_group_key.clone();
 
-        let row = div()
+        // Thin ruled-line branch separator: ⑂ main ──── +3139 -518
+        let mut stats = div().flex_none().flex().items_center().gap_1();
+
+        let summary = diff_summary.unwrap_or_default();
+        if summary.additions > 0 {
+            stats = stats.child(
+                div()
+                    .text_xs()
+                    .text_color(rgb(0x72d69c))
+                    .child(format!("+{}", summary.additions)),
+            );
+        }
+        if summary.deletions > 0 {
+            stats = stats.child(
+                div()
+                    .text_xs()
+                    .text_color(rgb(0xeb6f92))
+                    .child(format!("-{}", summary.deletions)),
+            );
+        }
+        if let Some(divergence) = branch_divergence
+            && !compact_sidebar
+        {
+            if divergence.ahead > 0 {
+                stats = stats.child(
+                    div()
+                        .text_xs()
+                        .text_color(rgb(0x72d69c))
+                        .child(format!("\u{2191}{}", divergence.ahead)),
+                );
+            }
+            if divergence.behind > 0 {
+                stats = stats.child(
+                    div()
+                        .text_xs()
+                        .text_color(rgb(0xe5c07b))
+                        .child(format!("\u{2193}{}", divergence.behind)),
+                );
+            }
+        }
+
+        let branch_header = div()
             .id(("worktree-row", index))
             .font_family(FONT_MONO)
-            .cursor_pointer()
-            .rounded_sm()
-            .hover(|this| this.bg(rgb(theme.panel_active_bg)))
             .flex()
             .items_center()
-            .on_drag(
-                DraggedSidebarItem {
-                    item_id: drag_item_id,
-                    group_key: drag_group_key,
-                    label: drag_label,
-                    icon: drag_icon,
-                    icon_color: theme.text_muted,
-                    bg_color: theme.panel_active_bg,
-                    border_color: theme.accent,
-                    text_color: theme.text_primary,
-                },
-                |dragged, _, _, cx| {
-                    cx.stop_propagation();
-                    cx.new(|_| dragged.clone())
-                },
-            )
-            .can_drop(move |value, _, _| {
-                value
-                    .downcast_ref::<DraggedSidebarItem>()
-                    .is_some_and(|dragged| dragged.group_key == can_drop_group_key)
-            })
-            .drag_over::<DraggedSidebarItem>({
-                let accent = theme.accent;
-                move |style, _, _, _| style.border_color(rgb(accent)).border_t_2()
-            })
-            .on_drop(
-                cx.listener(move |this, dragged: &DraggedSidebarItem, _, cx| {
-                    if dragged.group_key == drop_group_key {
-                        this.handle_sidebar_item_drop(
-                            &dragged.item_id,
-                            slot,
-                            &drop_group_key,
-                            &drop_repo_root,
-                            cx,
-                        );
-                    }
-                }),
-            )
-            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, _| {
-                this.update_worktree_hover_mouse_position(event.position);
-            }))
+            .gap(px(6.))
+            .py(px(4.))
+            .mt(px(4.))
+            .cursor_pointer()
             .on_click(
                 cx.listener(move |this, _, window, cx| this.select_worktree(index, window, cx)),
             )
-            .when(
-                !is_primary || worktree.checkout_kind == CheckoutKind::DiscreteClone,
-                |this| {
-                    this.on_mouse_down(
-                        MouseButton::Right,
-                        cx.listener(move |this, event: &MouseDownEvent, _, cx| {
-                            cx.stop_propagation();
-                            this.worktree_context_menu = Some(WorktreeContextMenu {
-                                worktree_index: index,
-                                position: event.position,
-                            });
-                            this.worktree_hover_popover = None;
-                            this._hover_show_task = None;
-                            cx.notify();
-                        }),
-                    )
-                },
+            // Branch icon
+            .child(
+                div()
+                    .flex_none()
+                    .text_size(px(12.))
+                    .text_color(rgb(theme.text_disabled))
+                    .child("\u{e0a0}"), // branch icon
             )
-            .on_hover(cx.listener(move |this, hovered: &bool, window, cx| {
-                this.update_worktree_hover_mouse_position(window.mouse_position());
-                if *hovered {
-                    let mouse_position = window.mouse_position();
-                    this.schedule_worktree_hover_popover_show(index, mouse_position.y, cx);
-                } else if this
-                    .worktree_hover_popover
-                    .as_ref()
-                    .is_some_and(|popover| popover.worktree_index == index)
-                {
-                    this.schedule_worktree_hover_popover_dismiss(index, cx);
-                } else {
-                    this.cancel_worktree_hover_popover_show();
-                }
-            }))
+            // Branch name
+            .child(
+                div()
+                    .flex_none()
+                    .text_xs()
+                    .text_color(rgb(theme.text_disabled))
+                    .child(worktree.branch.clone()),
+            )
+            // Horizontal rule
             .child(
                 div()
                     .flex_1()
-                    .min_w_0()
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(rgb(if is_active {
-                        theme.accent
-                    } else {
-                        theme.border
-                    }))
-                    .bg(rgb(theme.panel_bg))
-                    .px_2()
-                    .py(px(if compact_sidebar {
-                        4.
-                    } else {
-                        6.
-                    }))
+                    .h(px(1.))
+                    .bg(rgb(theme.border)),
+            )
+            // Stats
+            .child(stats);
+
+        let row_element = branch_header.into_any_element();
+
+        // Wrap branch header + session cards in a container
+        let sessions = worktree.recent_agent_sessions.clone();
+        let branch_for_cards = worktree.branch.clone();
+        let mut container = div().flex().flex_col().child(row_element);
+
+        if !compact_sidebar && !sessions.is_empty() {
+            let active_sessions: Vec<_> = sessions
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| s.is_active)
+                .collect();
+            let inactive_sessions: Vec<_> = sessions
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| !s.is_active)
+                .collect();
+
+            let mut cards = div().flex().flex_col().pl(px(20.)).gap(px(2.));
+
+            // Active sessions: full cards, always visible
+            for (si, session) in &active_sessions {
+                cards = cards.child(self.render_session_card(
+                    index,
+                    session,
+                    *si,
+                    &branch_for_cards,
+                    cx,
+                ));
+            }
+
+            // Inactive sessions: compact rows, limited
+            let show_all_inactive = self.inactive_sessions_expanded.contains(&index);
+            let visible_inactive_count = if show_all_inactive {
+                inactive_sessions.len()
+            } else {
+                2
+            };
+            let hidden_count = inactive_sessions
+                .len()
+                .saturating_sub(visible_inactive_count);
+
+            for (si, session) in inactive_sessions.iter().take(visible_inactive_count) {
+                cards = cards.child(self.render_inactive_session_row(index, session, *si, cx));
+            }
+
+            // "Show N more" toggle
+            if hidden_count > 0 {
+                let wt_index = index;
+                cards = cards.child(
+                    div()
+                        .id(("show-more-sessions", index))
+                        .cursor_pointer()
+                        .pl(px(12.))
+                        .py(px(2.))
+                        .text_xs()
+                        .text_color(rgb(theme.text_disabled))
+                        .hover(|this| this.text_color(rgb(theme.text_muted)))
+                        .child(format!("Show {hidden_count} more"))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.inactive_sessions_expanded.insert(wt_index);
+                            cx.notify();
+                            cx.stop_propagation();
+                        })),
+                );
+            } else if show_all_inactive && inactive_sessions.len() > 2 {
+                let wt_index = index;
+                cards = cards.child(
+                    div()
+                        .id(("show-less-sessions", index))
+                        .cursor_pointer()
+                        .pl(px(12.))
+                        .py(px(2.))
+                        .text_xs()
+                        .text_color(rgb(theme.text_disabled))
+                        .hover(|this| this.text_color(rgb(theme.text_muted)))
+                        .child("Show less")
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.inactive_sessions_expanded.remove(&wt_index);
+                            cx.notify();
+                            cx.stop_propagation();
+                        })),
+                );
+            }
+
+            container = container.child(cards);
+        }
+
+        container.into_any_element()
+    }
+
+    fn render_session_card(
+        &self,
+        worktree_index: usize,
+        session: &arbor_core::session::AgentSessionSummary,
+        session_index: usize,
+        _branch: &str,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let theme = self.theme();
+        let display_name = arbor_core::session::session_display_name(session);
+        let dot_color = if session.is_active {
+            0x72d69c_u32 // green
+        } else {
+            0xeb6f92_u32 // red
+        };
+
+        let session_id = session.id.clone();
+        let session_id_for_ctx = session.id.clone();
+        let session_id_for_copy = session.id.clone();
+
+        // Build metadata string: "Claude · 3 msgs · 2h ago"
+        let mut meta_parts = vec![session.provider.label().to_owned()];
+        if session.message_count > 0 {
+            meta_parts.push(format!("{} msgs", session.message_count));
+        }
+        if let Some(ts) = session.timestamp_unix_ms {
+            meta_parts.push(format_relative_time(ts));
+        }
+        let meta_text = meta_parts.join(" · ");
+
+        let card_id =
+            ElementId::Name(format!("session-card-{worktree_index}-{session_index}").into());
+        let copy_btn_id =
+            ElementId::Name(format!("session-copy-{worktree_index}-{session_index}").into());
+
+        div()
+            .id(card_id)
+            .cursor_pointer()
+            .rounded_md()
+            .border_1()
+            .border_color(rgb(theme.border))
+            .bg(rgb(theme.panel_bg))
+            .px_2()
+            .py(px(4.))
+            .mb(px(2.))
+            .hover(|this| this.bg(rgb(theme.panel_active_bg)))
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.resume_agent_session(worktree_index, &session_id, window, cx);
+            }))
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                    cx.stop_propagation();
+                    this.session_context_menu = Some(SessionContextMenu {
+                        worktree_index,
+                        session_id: session_id_for_ctx.clone(),
+                        position: event.position,
+                    });
+                    cx.notify();
+                }),
+            )
+            // Row 1: status dot + session name + copy button
+            .child(
+                div()
                     .flex()
-                    .flex_row()
                     .items_center()
-                    .gap(px(4.))
-                    .hover(|this| this.bg(rgb(theme.panel_active_bg)))
-                    .when(is_active, |this| {
-                        this.bg(rgb(theme.panel_active_bg))
-                            .border_color(rgb(theme.accent))
-                    })
-                    .when(is_merged_pr && !is_active, |this| this.opacity(0.72))
+                    .gap(px(6.))
                     .child(
                         div()
-                            .flex_none()
-                            .w(px(18.))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .child(if show_pr_loading_indicator {
-                                div()
-                                    .text_xs()
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(rgb(theme.accent))
-                                    .child(loading_spinner_frame(self.loading_animation_frame))
-                            } else {
-                                div()
-                                    .text_size(px(16.))
-                                    .text_color(rgb(theme.text_muted))
-                                    .child(worktree.checkout_kind.icon())
-                            }),
+                            .w(px(6.))
+                            .h(px(6.))
+                            .rounded_full()
+                            .bg(rgb(dot_color))
+                            .flex_none(),
                     )
                     .child(
                         div()
-                            .flex_1()
                             .min_w_0()
-                            .flex()
-                            .flex_col()
-                            .gap(px(1.))
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(2.))
-                                    .when_some(agent_dot_color, |this, color| {
-                                        this.child(
-                                            div()
-                                                .flex_none()
-                                                .size(px(6.))
-                                                .rounded_full()
-                                                .bg(rgb(color)),
-                                        )
-                                    })
-                                    .when(is_stuck, |this| {
-                                        this.child(
-                                            div()
-                                                .flex_none()
-                                                .text_xs()
-                                                .text_color(rgb(0xeb6f92))
-                                                .child("\u{f071}"),
-                                        )
-                                    })
-                                    .child(
-                                        div()
-                                            .min_w_0()
-                                            .flex_1()
-                                            .overflow_hidden()
-                                            .whitespace_nowrap()
-                                            .text_ellipsis()
-                                            .text_xs()
-                                            .font_weight(FontWeight::SEMIBOLD)
-                                            .text_color(rgb(theme.text_primary))
-                                            .child(if compact_sidebar {
-                                                format!("{} · {}", worktree.label, worktree.branch)
-                                            } else {
-                                                worktree.branch.clone()
-                                            }),
-                                    )
-                                    .child({
-                                        let summary = diff_summary.unwrap_or_default();
-                                        let show_diff_summary =
-                                            summary.additions > 0 || summary.deletions > 0;
-                                        let mut right =
-                                            div().flex_none().flex().items_center().gap_1();
-
-                                        if compact_sidebar {
-                                            right = right.child(
-                                                div()
-                                                    .text_xs()
-                                                    .text_color(rgb(attention.color))
-                                                    .child(attention.short_label),
-                                            );
-                                        }
-
-                                        if self.worktree_stats_loading
-                                            && diff_summary.is_none()
-                                            && !compact_sidebar
-                                        {
-                                            right = right.child(
-                                                div()
-                                                    .text_xs()
-                                                    .text_color(rgb(theme.text_muted))
-                                                    .child("..."),
-                                            );
-                                        } else if show_diff_summary && !compact_sidebar {
-                                            if summary.additions > 0 {
-                                                right = right.child(
-                                                    div()
-                                                        .text_xs()
-                                                        .text_color(rgb(0x72d69c))
-                                                        .child(format!("+{}", summary.additions)),
-                                                );
-                                            }
-                                            if summary.deletions > 0 {
-                                                right = right.child(
-                                                    div()
-                                                        .text_xs()
-                                                        .text_color(rgb(0xeb6f92))
-                                                        .child(format!("-{}", summary.deletions)),
-                                                );
-                                            }
-                                        }
-
-                                        if let Some(activity_ms) = worktree.last_activity_unix_ms {
-                                            right = right.child(
-                                                div()
-                                                    .text_xs()
-                                                    .text_color(rgb(theme.text_disabled))
-                                                    .child(format_relative_time(activity_ms)),
-                                            );
-                                        }
-
-                                        if let Some(divergence) = branch_divergence
-                                            && !compact_sidebar
-                                        {
-                                            if divergence.ahead > 0 {
-                                                right = right.child(
-                                                    div()
-                                                        .text_xs()
-                                                        .text_color(rgb(0x72d69c))
-                                                        .child(format!(
-                                                            "\u{2191}{}",
-                                                            divergence.ahead
-                                                        )),
-                                                );
-                                            }
-                                            if divergence.behind > 0 {
-                                                right = right.child(
-                                                    div()
-                                                        .text_xs()
-                                                        .text_color(rgb(0xe5c07b))
-                                                        .child(format!(
-                                                            "\u{2193}{}",
-                                                            divergence.behind
-                                                        )),
-                                                );
-                                            }
-                                        }
-
-                                        right
-                                    }),
-                            )
-                            .when(!compact_sidebar, |this| {
-                                this.child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .gap_2()
-                                        .child(
-                                            div()
-                                                .min_w_0()
-                                                .flex_1()
-                                                .overflow_hidden()
-                                                .whitespace_nowrap()
-                                                .text_ellipsis()
-                                                .text_xs()
-                                                .text_color(rgb(theme.text_disabled))
-                                                .child({
-                                                    let task_or_label = worktree
-                                                        .agent_task
-                                                        .clone()
-                                                        .unwrap_or_else(|| worktree.label.clone());
-                                                    if activity_sparkline.is_empty() {
-                                                        format!(
-                                                            "{} · {}",
-                                                            attention.label, task_or_label
-                                                        )
-                                                    } else {
-                                                        format!(
-                                                            "{} {} · {}",
-                                                            attention.label,
-                                                            activity_sparkline,
-                                                            task_or_label
-                                                        )
-                                                    }
-                                                }),
-                                        )
-                                        .when_some(pr_details.clone(), |this, pr| {
-                                            let (checks_icon, checks_color) = match pr.checks_status
-                                            {
-                                                github_service::CheckStatus::Success => {
-                                                    ("\u{f00c}", 0x72d69c_u32)
-                                                },
-                                                github_service::CheckStatus::Failure => {
-                                                    ("\u{f00d}", 0xeb6f92_u32)
-                                                },
-                                                github_service::CheckStatus::Pending => {
-                                                    ("\u{f192}", 0xe5c07b_u32)
-                                                },
-                                            };
-                                            let (review_icon, _, review_color) =
-                                                review_status_presentation(pr.review_decision);
-
-                                            let mut badges = this
-                                                .child(
-                                                    div()
-                                                        .flex_none()
-                                                        .text_xs()
-                                                        .text_color(rgb(checks_color))
-                                                        .child(checks_icon),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .flex_none()
-                                                        .text_xs()
-                                                        .text_color(rgb(review_color))
-                                                        .child(review_icon),
-                                                );
-
-                                            if pr.additions > 0 {
-                                                badges = badges.child(
-                                                    div()
-                                                        .flex_none()
-                                                        .text_xs()
-                                                        .text_color(rgb(0x72d69c))
-                                                        .child(format!("+{}", pr.additions)),
-                                                );
-                                            }
-                                            if pr.deletions > 0 {
-                                                badges = badges.child(
-                                                    div()
-                                                        .flex_none()
-                                                        .text_xs()
-                                                        .text_color(rgb(0xeb6f92))
-                                                        .child(format!("-{}", pr.deletions)),
-                                                );
-                                            }
-
-                                            let mut badges = badges;
-                                            for port in detected_ports.iter().take(2) {
-                                                let port_url = worktree_port_url(port);
-                                                let port_id = format!(
-                                                    "worktree-port-link-{index}-{}",
-                                                    port.port
-                                                );
-                                                badges = badges.child(
-                                                    div()
-                                                        .id(ElementId::Name(port_id.into()))
-                                                        .cursor_pointer()
-                                                        .flex_none()
-                                                        .text_xs()
-                                                        .text_color(rgb(0x72d69c))
-                                                        .hover(|this| {
-                                                            this.text_color(rgb(theme.text_primary))
-                                                        })
-                                                        .child(worktree_port_badge_text(port))
-                                                        .on_click(cx.listener(
-                                                            move |this, _, _, cx| {
-                                                                this.open_external_url(
-                                                                    &port_url, cx,
-                                                                );
-                                                                cx.stop_propagation();
-                                                            },
-                                                        )),
-                                                );
-                                            }
-
-                                            badges
-                                        })
-                                        .when_some(pr_number, |this, pr_num| {
-                                            let pr_text = format!("#{pr_num}");
-                                            if let Some(pr_url) = pr_url.clone() {
-                                                this.child(
-                                                    div()
-                                                        .id(("worktree-pr-link", index))
-                                                        .cursor_pointer()
-                                                        .flex_none()
-                                                        .text_xs()
-                                                        .text_color(rgb(pr_badge_color))
-                                                        .hover(|this| {
-                                                            this.text_color(rgb(theme.text_primary))
-                                                        })
-                                                        .child(pr_text)
-                                                        .on_click(cx.listener(
-                                                            move |this, _, _, cx| {
-                                                                this.open_external_url(&pr_url, cx);
-                                                                cx.stop_propagation();
-                                                            },
-                                                        )),
-                                                )
-                                            } else {
-                                                this.child(
-                                                    div()
-                                                        .flex_none()
-                                                        .text_xs()
-                                                        .text_color(rgb(pr_badge_color))
-                                                        .child(pr_text),
-                                                )
-                                            }
-                                        })
-                                        .when(
-                                            pr_details.is_none() && !detected_ports.is_empty(),
-                                            |this| {
-                                                detected_ports.iter().take(2).fold(
-                                                    this,
-                                                    |this, port| {
-                                                        let port_url = worktree_port_url(port);
-                                                        let port_id = format!(
-                                                            "worktree-port-link-{index}-{}",
-                                                            port.port
-                                                        );
-                                                        this.child(
-                                                            div()
-                                                                .id(ElementId::Name(port_id.into()))
-                                                                .cursor_pointer()
-                                                                .flex_none()
-                                                                .text_xs()
-                                                                .text_color(rgb(0x72d69c))
-                                                                .hover(|this| {
-                                                                    this.text_color(rgb(
-                                                                        theme.text_primary
-                                                                    ))
-                                                                })
-                                                                .child(worktree_port_badge_text(
-                                                                    port,
-                                                                ))
-                                                                .on_click(cx.listener(
-                                                                    move |this, _, _, cx| {
-                                                                        this.open_external_url(
-                                                                            &port_url, cx,
-                                                                        );
-                                                                        cx.stop_propagation();
-                                                                    },
-                                                                )),
-                                                        )
-                                                    },
-                                                )
-                                            },
-                                        ),
-                                )
-                            }),
+                            .flex_1()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .text_xs()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(rgb(theme.text_primary))
+                            .child(display_name),
+                    )
+                    .child(
+                        div()
+                            .id(copy_btn_id)
+                            .cursor_pointer()
+                            .flex_none()
+                            .text_xs()
+                            .text_color(rgb(theme.text_disabled))
+                            .hover(|this| this.text_color(rgb(theme.text_primary)))
+                            .child("\u{f0c5}") // clipboard icon
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                cx.write_to_clipboard(ClipboardItem::new_string(
+                                    session_id_for_copy.clone(),
+                                ));
+                                this.notice = Some("Session ID copied".to_owned());
+                                cx.notify();
+                                cx.stop_propagation();
+                            })),
                     ),
-            );
-
-        if is_active {
-            row.with_animation(
-                ("worktree-select", selection_epoch),
-                Animation::new(Duration::from_millis(150)).with_easing(ease_in_out),
-                |el, delta| el.opacity(0.8 + 0.2 * delta),
             )
-            .into_any_element()
-        } else {
-            row.opacity(0.8).into_any_element()
-        }
+            // Row 2: task text
+            .child(
+                div()
+                    .pl(px(12.)) // align with text after dot
+                    .min_w_0()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .text_ellipsis()
+                    .text_xs()
+                    .text_color(rgb(theme.text_muted))
+                    .child(session.title.clone()),
+            )
+            // Row 3: metadata
+            .child(
+                div()
+                    .pl(px(12.))
+                    .text_xs()
+                    .text_color(rgb(theme.text_disabled))
+                    .child(meta_text),
+            )
+    }
+
+    /// Compact single-line row for inactive sessions: dot + name + relative time.
+    fn render_inactive_session_row(
+        &self,
+        worktree_index: usize,
+        session: &arbor_core::session::AgentSessionSummary,
+        session_index: usize,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let theme = self.theme();
+        let display_name = arbor_core::session::session_display_name(session);
+        let session_id = session.id.clone();
+        let session_id_for_ctx = session.id.clone();
+
+        let time_text = session
+            .timestamp_unix_ms
+            .map(format_relative_time)
+            .unwrap_or_default();
+
+        let row_id =
+            ElementId::Name(format!("inactive-session-{worktree_index}-{session_index}").into());
+
+        div()
+            .id(row_id)
+            .cursor_pointer()
+            .rounded_sm()
+            .px_2()
+            .py(px(2.))
+            .hover(|this| this.bg(rgb(theme.panel_active_bg)))
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.resume_agent_session(worktree_index, &session_id, window, cx);
+            }))
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                    cx.stop_propagation();
+                    this.session_context_menu = Some(SessionContextMenu {
+                        worktree_index,
+                        session_id: session_id_for_ctx.clone(),
+                        position: event.position,
+                    });
+                    cx.notify();
+                }),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .child(
+                        div()
+                            .w(px(6.))
+                            .h(px(6.))
+                            .rounded_full()
+                            .bg(rgb(theme.text_disabled))
+                            .flex_none(),
+                    )
+                    .child(
+                        div()
+                            .min_w_0()
+                            .flex_1()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .text_xs()
+                            .text_color(rgb(theme.text_muted))
+                            .child(display_name),
+                    )
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_xs()
+                            .text_color(rgb(theme.text_disabled))
+                            .child(time_text),
+                    ),
+            )
     }
 
     pub(crate) fn render_repository_outpost_row(
@@ -2361,10 +2257,6 @@ impl ArborWindow {
                 cx.stop_propagation();
                 cx.notify();
             }))
-            .on_mouse_move(cx.listener(|this, _, _, cx| {
-                this.repository_context_menu = None;
-                cx.notify();
-            }))
             // Absolutely-positioned menu at cursor position
             .child(
                 div()
@@ -2386,6 +2278,81 @@ impl ArborWindow {
                     .on_mouse_down(MouseButton::Right, |_, _, cx| {
                         cx.stop_propagation();
                     })
+                    // Repo Settings
+                    .child(
+                        div()
+                            .id("repository-context-settings")
+                            .h(px(30.))
+                            .mx(px(4.))
+                            .px(px(8.))
+                            .rounded_sm()
+                            .cursor_pointer()
+                            .hover(|this| this.bg(rgb(theme.panel_active_bg)))
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.repository_context_menu = None;
+                                this.open_repo_settings_modal(index, cx);
+                            }))
+                            .child(
+                                div()
+                                    .font_family(FONT_MONO)
+                                    .text_size(px(16.))
+                                    .text_color(rgb(theme.text_primary))
+                                    .child("\u{f013}"),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(13.))
+                                    .text_color(rgb(theme.text_primary))
+                                    .child("Repo Settings\u{2026}"),
+                            ),
+                    )
+                    // Add Worktree
+                    .child(
+                        div()
+                            .id("repository-context-add-worktree")
+                            .h(px(30.))
+                            .mx(px(4.))
+                            .px(px(8.))
+                            .rounded_sm()
+                            .cursor_pointer()
+                            .hover(|this| this.bg(rgb(theme.panel_active_bg)))
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.repository_context_menu = None;
+                                this.open_create_modal(
+                                    index,
+                                    CreateModalTab::LocalWorktree,
+                                    cx,
+                                );
+                            }))
+                            .child(
+                                div()
+                                    .font_family(FONT_MONO)
+                                    .text_size(px(16.))
+                                    .text_color(rgb(theme.text_primary))
+                                    .child("\u{e725}"),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(13.))
+                                    .text_color(rgb(theme.text_primary))
+                                    .child("Add Worktree\u{2026}"),
+                            ),
+                    )
+                    // Divider
+                    .child(
+                        div()
+                            .h(px(1.))
+                            .mx(px(8.))
+                            .my(px(4.))
+                            .bg(rgb(theme.border)),
+                    )
+                    // Remove
                     .child(
                         div()
                             .id("repository-context-remove")
@@ -2433,6 +2400,398 @@ impl ArborWindow {
             )
     }
 
+    pub(crate) fn open_repo_icon_file_picker(&mut self, group_key: String, cx: &mut Context<Self>) {
+        let picker = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Select Icon Image".into()),
+        });
+
+        cx.spawn(async move |this, cx| {
+            let Ok(selection) = picker.await else {
+                return;
+            };
+            let _ = this.update(cx, |this, cx| match selection {
+                Ok(Some(paths)) => {
+                    if let Some(source_path) = paths.into_iter().next() {
+                        let ext = source_path
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .map(|e| e.to_ascii_lowercase())
+                            .unwrap_or_default();
+                        let error = if !Self::SUPPORTED_ICON_EXTENSIONS.contains(&ext.as_str()) {
+                            Some(format!(
+                                "Unsupported format \".{ext}\". Use: png, jpg, svg, gif, webp"
+                            ))
+                        } else if !source_path.is_file() {
+                            Some("File not found or not readable".to_owned())
+                        } else {
+                            None
+                        };
+                        this.repo_icon_preview = Some(RepoIconPreviewModal {
+                            group_key,
+                            source_path,
+                            scale: 1.0,
+                            error,
+                        });
+                        cx.notify();
+                    }
+                },
+                Ok(None) => {},
+                Err(error) => {
+                    this.notice = Some(format!("Failed to open file picker: {error}"));
+                    cx.notify();
+                },
+            });
+        })
+        .detach();
+    }
+
+    pub(crate) fn render_repo_icon_preview_modal(&mut self, cx: &mut Context<Self>) -> Div {
+        let Some(preview) = self.repo_icon_preview.as_ref() else {
+            return div();
+        };
+        let theme = self.theme();
+        let source_path_buf = preview.source_path.clone();
+        let file_name = preview
+            .source_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_owned();
+        let scale = preview.scale;
+        let error = preview.error.clone();
+        let has_error = error.is_some();
+
+        div().absolute().inset_0().child(modal_backdrop()).child(
+            div()
+                .absolute()
+                .inset_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _, _, cx| {
+                        this.repo_icon_preview = None;
+                        cx.stop_propagation();
+                        cx.notify();
+                    }),
+                )
+                .child(
+                    div()
+                            .w(px(340.))
+                            .flex_none()
+                            .overflow_hidden()
+                            .rounded_md()
+                            .border_1()
+                            .border_color(rgb(theme.border))
+                            .bg(rgb(theme.sidebar_bg))
+                            .p_4()
+                            .flex()
+                            .flex_col()
+                            .gap_3()
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                                cx.stop_propagation();
+                            })
+                            // Title row
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .text_color(rgb(theme.text_primary))
+                                            .child("Change Repository Icon"),
+                                    )
+                                    .child(
+                                        div()
+                                            .id("icon-preview-close")
+                                            .cursor_pointer()
+                                            .text_sm()
+                                            .text_color(rgb(theme.text_muted))
+                                            .hover(|this| {
+                                                this.text_color(rgb(theme.text_primary))
+                                            })
+                                            .child("\u{00d7}")
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.repo_icon_preview = None;
+                                                cx.notify();
+                                            })),
+                                    ),
+                            )
+                            // File name
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(rgb(theme.text_muted))
+                                    .overflow_hidden()
+                                    .whitespace_nowrap()
+                                    .text_ellipsis()
+                                    .child(file_name),
+                            )
+                            // Error
+                            .when_some(error, |this, error| {
+                                this.child(
+                                    div()
+                                        .rounded_sm()
+                                        .border_1()
+                                        .border_color(rgb(0xa44949))
+                                        .bg(rgb(0x4d2a2a))
+                                        .px_2()
+                                        .py_1()
+                                        .text_xs()
+                                        .text_color(rgb(0xffd7d7))
+                                        .child(error),
+                                )
+                            })
+                            // Preview area
+                            .when(!has_error, |this| {
+                                this.child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .gap(px(16.))
+                                        .py_2()
+                                        // Large preview
+                                        .child(
+                                            div().flex().flex_col().items_center().gap_1().child(
+                                                div()
+                                                    .size(px(80.))
+                                                    .rounded_full()
+                                                    .overflow_hidden()
+                                                    .border_1()
+                                                    .border_color(rgb(theme.border))
+                                                    .flex()
+                                                    .items_center()
+                                                    .justify_center()
+                                                    .child(
+                                                        img(source_path_buf.clone())
+                                                            .size(px(80. * scale))
+                                                            .with_fallback(move || {
+                                                                div()
+                                                                    .size_full()
+                                                                    .text_xs()
+                                                                    .text_color(rgb(0xffd7d7))
+                                                                    .flex()
+                                                                    .items_center()
+                                                                    .justify_center()
+                                                                    .child("Failed to load")
+                                                                    .into_any_element()
+                                                            }),
+                                                    ),
+                                            ),
+                                        )
+                                        // Small previews at actual sidebar sizes
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .flex_col()
+                                                .items_center()
+                                                .gap_2()
+                                                .child(
+                                                    div()
+                                                        .flex()
+                                                        .items_center()
+                                                        .gap_2()
+                                                        .child(
+                                                            div()
+                                                                .size(px(20.))
+                                                                .rounded_full()
+                                                                .overflow_hidden()
+                                                                .flex()
+                                                                .items_center()
+                                                                .justify_center()
+                                                                .child(
+                                                                    img(source_path_buf.clone())
+                                                                        .size(px(20. * scale)),
+                                                                ),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .size(px(28.))
+                                                                .rounded_full()
+                                                                .overflow_hidden()
+                                                                .flex()
+                                                                .items_center()
+                                                                .justify_center()
+                                                                .child(
+                                                                    img(source_path_buf.clone())
+                                                                        .size(px(28. * scale)),
+                                                                ),
+                                                        ),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_xs()
+                                                        .text_color(rgb(theme.text_disabled))
+                                                        .child("Actual sizes"),
+                                                ),
+                                        ),
+                                )
+                            })
+                            // Zoom control
+                            .when(!has_error, |this| {
+                                this.child(
+                                    div().flex().items_center().gap_2().child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(rgb(theme.text_muted))
+                                            .flex_none()
+                                            .child("Zoom"),
+                                    )
+                                    .child(
+                                        div()
+                                            .id("icon-zoom-track")
+                                            .flex_1()
+                                            .h(px(20.))
+                                            .flex()
+                                            .items_center()
+                                            .cursor_pointer()
+                                            .on_mouse_down(
+                                                MouseButton::Left,
+                                                cx.listener(
+                                                    |this, _event: &MouseDownEvent, _, cx| {
+                                                        this.cycle_icon_zoom(cx);
+                                                    },
+                                                ),
+                                            )
+                                            .child(
+                                                div()
+                                                    .w_full()
+                                                    .h(px(4.))
+                                                    .rounded_sm()
+                                                    .bg(rgb(theme.panel_bg))
+                                                    .border_1()
+                                                    .border_color(rgb(theme.border))
+                                                    .relative()
+                                                    .child(
+                                                        div()
+                                                            .absolute()
+                                                            .left_0()
+                                                            .top_0()
+                                                            .h_full()
+                                                            .w(px(
+                                                                ((scale - 0.5) / 2.5 * 200.0)
+                                                                    .clamp(0.0, 200.0),
+                                                            ))
+                                                            .rounded_sm()
+                                                            .bg(rgb(theme.accent)),
+                                                    ),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(rgb(theme.text_muted))
+                                            .flex_none()
+                                            .w(px(32.))
+                                            .child(format!("{:.0}%", scale * 100.0)),
+                                    ),
+                                )
+                            })
+                            // Buttons
+                            .child(
+                                div().flex().justify_end().gap_2().child(
+                                    action_button(
+                                        theme,
+                                        "icon-preview-cancel",
+                                        "Cancel",
+                                        ActionButtonStyle::Secondary,
+                                        true,
+                                    )
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.repo_icon_preview = None;
+                                        cx.notify();
+                                    })),
+                                )
+                                .child(
+                                    action_button(
+                                        theme,
+                                        "icon-preview-apply",
+                                        "Apply",
+                                        ActionButtonStyle::Primary,
+                                        !has_error,
+                                    )
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.apply_repo_icon_preview(cx);
+                                    })),
+                                ),
+                            ),
+                ),
+        )
+    }
+
+    pub(crate) fn cycle_icon_zoom(&mut self, cx: &mut Context<Self>) {
+        let Some(preview) = self.repo_icon_preview.as_mut() else {
+            return;
+        };
+        let presets = [0.5_f32, 0.75, 1.0, 1.5, 2.0, 3.0];
+        let current = preview.scale;
+        let next = presets
+            .iter()
+            .find(|&&p| p > current + 0.01)
+            .copied()
+            .unwrap_or(presets[0]);
+        preview.scale = next;
+        cx.notify();
+    }
+
+    pub(crate) fn apply_repo_icon_preview(&mut self, cx: &mut Context<Self>) {
+        let Some(preview) = self.repo_icon_preview.take() else {
+            return;
+        };
+        if preview.error.is_some() {
+            return;
+        }
+        let Ok(home) = user_home_dir() else {
+            self.notice = Some("Cannot determine home directory".to_owned());
+            cx.notify();
+            return;
+        };
+        let icons_dir = home.join(".arbor").join("repo-icons");
+        if let Err(e) = fs::create_dir_all(&icons_dir) {
+            self.notice = Some(format!("Failed to create icons directory: {e}"));
+            cx.notify();
+            return;
+        }
+        let safe_name: String = preview
+            .group_key
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        let extension = preview
+            .source_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("png");
+        let dest_path = icons_dir.join(format!("{safe_name}.{extension}"));
+        if let Err(e) = fs::copy(&preview.source_path, &dest_path) {
+            self.notice = Some(format!("Failed to copy icon: {e}"));
+            cx.notify();
+            return;
+        }
+        let dest_str = dest_path.to_string_lossy().to_string();
+        self.custom_repo_icons
+            .insert(preview.group_key, ui_state_store::CustomRepoIcon {
+                path: dest_str,
+                scale: preview.scale,
+            });
+        self.sync_custom_repo_icons_store(cx);
+        cx.notify();
+    }
+
     pub(crate) fn render_worktree_context_menu(&mut self, cx: &mut Context<Self>) -> Div {
         let Some(menu) = self.worktree_context_menu.as_ref() else {
             return div();
@@ -2461,10 +2820,6 @@ impl ArborWindow {
                     cx.notify();
                 }),
             )
-            .on_mouse_move(cx.listener(|this, _, _, cx| {
-                this.worktree_context_menu = None;
-                cx.notify();
-            }))
             .child(
                 div()
                     .absolute()
@@ -2528,6 +2883,130 @@ impl ArborWindow {
                                     .text_size(px(13.))
                                     .text_color(rgb(0xeb6f92))
                                     .child("Delete"),
+                            ),
+                    ),
+            )
+    }
+
+    pub(crate) fn render_session_context_menu(&mut self, cx: &mut Context<Self>) -> Div {
+        let Some(menu) = self.session_context_menu.as_ref() else {
+            return div();
+        };
+
+        let theme = self.theme();
+        let position = menu.position;
+        let worktree_index = menu.worktree_index;
+        let session_id = menu.session_id.clone();
+        let session_id_for_copy = menu.session_id.clone();
+
+        div()
+            .absolute()
+            .inset_0()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| {
+                    this.session_context_menu = None;
+                    cx.stop_propagation();
+                    cx.notify();
+                }),
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|this, _, _, cx| {
+                    this.session_context_menu = None;
+                    cx.stop_propagation();
+                    cx.notify();
+                }),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .left(position.x)
+                    .top(position.y)
+                    .w(px(180.))
+                    .py(px(4.))
+                    .rounded_sm()
+                    .border_1()
+                    .border_color(rgb(theme.border))
+                    .bg(rgb(theme.chrome_bg))
+                    .on_mouse_move(|_, _, cx| {
+                        cx.stop_propagation();
+                    })
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                        cx.stop_propagation();
+                    })
+                    .on_mouse_down(MouseButton::Right, |_, _, cx| {
+                        cx.stop_propagation();
+                    })
+                    // Resume Session
+                    .child(
+                        div()
+                            .id("session-ctx-resume")
+                            .h(px(30.))
+                            .mx(px(4.))
+                            .px(px(8.))
+                            .rounded_sm()
+                            .cursor_pointer()
+                            .hover(|this| this.bg(rgb(theme.panel_active_bg)))
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.session_context_menu = None;
+                                this.resume_agent_session(
+                                    worktree_index,
+                                    &session_id,
+                                    window,
+                                    cx,
+                                );
+                            }))
+                            .child(
+                                div()
+                                    .font_family(FONT_MONO)
+                                    .text_size(px(16.))
+                                    .text_color(rgb(theme.text_muted))
+                                    .child("\u{f120}"), // terminal icon
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(13.))
+                                    .text_color(rgb(theme.text_primary))
+                                    .child("Resume Session"),
+                            ),
+                    )
+                    // Copy Session ID
+                    .child(
+                        div()
+                            .id("session-ctx-copy")
+                            .h(px(30.))
+                            .mx(px(4.))
+                            .px(px(8.))
+                            .rounded_sm()
+                            .cursor_pointer()
+                            .hover(|this| this.bg(rgb(theme.panel_active_bg)))
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.session_context_menu = None;
+                                cx.write_to_clipboard(ClipboardItem::new_string(
+                                    session_id_for_copy.clone(),
+                                ));
+                                this.notice = Some("Session ID copied".to_owned());
+                                cx.notify();
+                            }))
+                            .child(
+                                div()
+                                    .font_family(FONT_MONO)
+                                    .text_size(px(16.))
+                                    .text_color(rgb(theme.text_muted))
+                                    .child("\u{f0c5}"), // clipboard icon
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(13.))
+                                    .text_color(rgb(theme.text_primary))
+                                    .child("Copy Session ID"),
                             ),
                     ),
             )
@@ -2766,66 +3245,6 @@ impl ArborWindow {
                                     .unwrap_or_else(|| "-".to_owned()),
                             ),
                         ),
-                );
-            }
-        }
-
-        if !worktree.recent_agent_sessions.is_empty() {
-            card = card.child(div().h(px(1.)).bg(rgb(theme.border)).my_1());
-            card = card.child(
-                div()
-                    .text_xs()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(rgb(theme.text_primary))
-                    .child("Recent sessions"),
-            );
-
-            let mut current_provider = None;
-            for session in worktree.recent_agent_sessions.iter().take(4) {
-                if current_provider != Some(session.provider) {
-                    current_provider = Some(session.provider);
-                    card = card.child(
-                        div()
-                            .text_xs()
-                            .text_color(rgb(theme.text_disabled))
-                            .child(session.provider.label()),
-                    );
-                }
-
-                let mut meta = Vec::new();
-                if session.message_count > 0 {
-                    meta.push(format!("{} msgs", session.message_count));
-                }
-                if let Some(timestamp) = session.timestamp_unix_ms {
-                    meta.push(format_relative_time(timestamp));
-                }
-
-                card = card.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .gap_2()
-                        .child(
-                            div()
-                                .min_w_0()
-                                .flex_1()
-                                .overflow_hidden()
-                                .whitespace_nowrap()
-                                .text_ellipsis()
-                                .text_xs()
-                                .text_color(rgb(theme.text_muted))
-                                .child(session.title.clone()),
-                        )
-                        .when(!meta.is_empty(), |this| {
-                            this.child(
-                                div()
-                                    .flex_none()
-                                    .text_xs()
-                                    .text_color(rgb(theme.text_disabled))
-                                    .child(meta.join(" · ")),
-                            )
-                        }),
                 );
             }
         }

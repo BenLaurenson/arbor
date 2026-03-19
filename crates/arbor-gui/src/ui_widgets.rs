@@ -524,6 +524,7 @@ pub(crate) fn status_text(theme: ThemePalette, text: impl Into<String>) -> Div {
 #[derive(Clone, Copy)]
 pub(crate) struct WorktreeAttentionIndicator {
     pub(crate) label: &'static str,
+    #[allow(dead_code)]
     pub(crate) short_label: &'static str,
     pub(crate) color: u32,
 }
@@ -645,23 +646,6 @@ pub(crate) fn estimated_worktree_hover_popover_card_height(
 
     if !worktree.detected_ports.is_empty() {
         height += 22.;
-    }
-
-    if !worktree.recent_agent_sessions.is_empty() {
-        let visible_sessions = worktree.recent_agent_sessions.iter().take(4);
-        let provider_headers = visible_sessions
-            .clone()
-            .fold((None, 0usize), |(previous, count), session| {
-                if previous == Some(session.provider) {
-                    (previous, count)
-                } else {
-                    (Some(session.provider), count + 1)
-                }
-            })
-            .1;
-        height += 24.
-            + worktree.recent_agent_sessions.iter().take(4).count() as f32 * 18.
-            + provider_headers as f32 * 16.;
     }
 
     if let Some(pr) = worktree.pr_details.as_ref() {

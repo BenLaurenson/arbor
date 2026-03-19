@@ -192,14 +192,20 @@ impl ArborWindow {
             .collect();
         let previous_recent_agent_sessions: HashMap<
             PathBuf,
-            Vec<arbor_core::session::AgentSessionSummary>,
+            (
+                Vec<arbor_core::session::AgentSessionSummary>,
+                Option<Instant>,
+            ),
         > = self
             .worktrees
             .iter()
             .map(|worktree| {
                 (
                     worktree.path.clone(),
-                    worktree.recent_agent_sessions.clone(),
+                    (
+                        worktree.recent_agent_sessions.clone(),
+                        worktree.agent_sessions_last_fetched,
+                    ),
                 )
             })
             .collect();
@@ -294,10 +300,12 @@ impl ArborWindow {
                     .get(&worktree.path)
                     .cloned()
                     .unwrap_or_default();
-                worktree.recent_agent_sessions = previous_recent_agent_sessions
-                    .get(&worktree.path)
-                    .cloned()
-                    .unwrap_or_default();
+                if let Some((sessions, last_fetched)) =
+                    previous_recent_agent_sessions.get(&worktree.path)
+                {
+                    worktree.recent_agent_sessions = sessions.clone();
+                    worktree.agent_sessions_last_fetched = *last_fetched;
+                }
                 worktree.stuck_turn_count = previous_stuck_turn_counts
                     .get(&worktree.path)
                     .copied()
@@ -523,10 +531,17 @@ impl ArborWindow {
     }
 
     pub(crate) fn refresh_agent_sessions(&mut self, cx: &mut Context<Self>) {
+        let now = Instant::now();
+        let stale_threshold = Duration::from_secs(30);
         let worktree_paths: Vec<PathBuf> = self
             .worktrees
             .iter()
-            .filter(|worktree| worktree.recent_agent_sessions.is_empty())
+            .filter(|worktree| {
+                worktree.recent_agent_sessions.is_empty()
+                    || worktree
+                        .agent_sessions_last_fetched
+                        .is_none_or(|fetched| now.duration_since(fetched) > stale_threshold)
+            })
             .map(|worktree| worktree.path.clone())
             .collect();
         if worktree_paths.is_empty() {
@@ -539,7 +554,7 @@ impl ArborWindow {
                     worktree_paths
                         .into_iter()
                         .map(|path| {
-                            let sessions = arbor_core::session::recent_agent_sessions(&path, 6);
+                            let sessions = arbor_core::session::recent_agent_sessions(&path, 8);
                             (path, sessions)
                         })
                         .collect::<Vec<_>>()
@@ -548,15 +563,18 @@ impl ArborWindow {
 
             let _ = this.update(cx, |this, cx| {
                 let mut changed = false;
+                let fetch_time = Instant::now();
                 for (path, sessions) in results {
                     if let Some(worktree) = this
                         .worktrees
                         .iter_mut()
                         .find(|worktree| worktree.path == path)
-                        && worktree.recent_agent_sessions != sessions
                     {
-                        worktree.recent_agent_sessions = sessions;
-                        changed = true;
+                        worktree.agent_sessions_last_fetched = Some(fetch_time);
+                        if worktree.recent_agent_sessions != sessions {
+                            worktree.recent_agent_sessions = sessions;
+                            changed = true;
+                        }
                     }
                 }
                 if changed {
