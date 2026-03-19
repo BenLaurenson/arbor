@@ -292,15 +292,26 @@ impl ArborWindow {
     fn render_hub_divider(
         &self,
         is_horizontal: bool,
-        _path: Vec<usize>,
+        path: Vec<usize>,
         _ratio: f32,
-        _cx: &mut Context<Self>,
-    ) -> Div {
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
         let theme = self.theme();
+        let divider_id = ElementId::Name(
+            format!(
+                "hub-divider-{}",
+                path.iter()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<_>>()
+                    .join("-")
+            )
+            .into(),
+        );
+        let drag_path = path.clone();
 
         if is_horizontal {
-            // Vertical divider (between left and right panes)
             div()
+                .id(divider_id)
                 .flex_none()
                 .w(px(4.))
                 .h_full()
@@ -308,10 +319,25 @@ impl ArborWindow {
                 .flex()
                 .items_center()
                 .justify_center()
+                .on_drag(
+                    DraggedHubDivider {
+                        path: drag_path,
+                        is_horizontal: true,
+                    },
+                    |dragged, _, _, cx| {
+                        cx.stop_propagation();
+                        cx.new(|_| dragged.clone())
+                    },
+                )
+                .on_drag_move(cx.listener(
+                    move |this, event: &DragMoveEvent<DraggedHubDivider>, _, cx| {
+                        this.handle_hub_divider_drag(event, cx);
+                    },
+                ))
                 .child(div().w(px(1.)).h_full().bg(rgb(theme.border)))
         } else {
-            // Horizontal divider (between top and bottom panes)
             div()
+                .id(divider_id)
                 .flex_none()
                 .h(px(4.))
                 .w_full()
@@ -319,8 +345,56 @@ impl ArborWindow {
                 .flex()
                 .items_center()
                 .justify_center()
+                .on_drag(
+                    DraggedHubDivider {
+                        path,
+                        is_horizontal: false,
+                    },
+                    |dragged, _, _, cx| {
+                        cx.stop_propagation();
+                        cx.new(|_| dragged.clone())
+                    },
+                )
+                .on_drag_move(cx.listener(
+                    move |this, event: &DragMoveEvent<DraggedHubDivider>, _, cx| {
+                        this.handle_hub_divider_drag(event, cx);
+                    },
+                ))
                 .child(div().h(px(1.)).w_full().bg(rgb(theme.border)))
         }
+    }
+
+    /// Handle drag events on hub dividers to resize split ratios.
+    fn handle_hub_divider_drag(
+        &mut self,
+        event: &DragMoveEvent<DraggedHubDivider>,
+        cx: &mut Context<Self>,
+    ) {
+        let drag = event.drag(cx);
+        // Use mouse position relative to the center pane to compute new ratio.
+        // The ratio is clamped in set_ratio_at_path to [0.15, 0.85].
+        let mouse_pos = event.event.position;
+        let ratio = if drag.is_horizontal {
+            let left_edge = px(self.left_pane_width + PANE_RESIZE_HANDLE_WIDTH);
+            let right_edge = px(self.left_pane_width + PANE_RESIZE_HANDLE_WIDTH + 800.0);
+            let center_width = right_edge - left_edge;
+            if center_width > px(0.) {
+                ((mouse_pos.x - left_edge) / center_width).clamp(0.15, 0.85)
+            } else {
+                0.5
+            }
+        } else {
+            let top_edge = px(60.0); // top bar height
+            let center_height = px(600.0); // approximate
+            if center_height > px(0.) {
+                ((mouse_pos.y - top_edge) / center_height).clamp(0.15, 0.85)
+            } else {
+                0.5
+            }
+        };
+
+        self.hub_layout.set_ratio_at_path(&drag.path, ratio);
+        cx.notify();
     }
 
     /// Focus a terminal in the hub — updates active terminal and syncs worktree context.

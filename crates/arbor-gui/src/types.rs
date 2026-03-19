@@ -1778,6 +1778,21 @@ impl Render for DraggedPaneDivider {
     }
 }
 
+/// Drag payload for hub split dividers.
+#[derive(Clone)]
+pub(crate) struct DraggedHubDivider {
+    /// Path in the split tree to the node containing this divider.
+    pub(crate) path: Vec<usize>,
+    /// Whether this is a horizontal split (divider is vertical).
+    pub(crate) is_horizontal: bool,
+}
+
+impl Render for DraggedHubDivider {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        gpui::Empty
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TerminalGridPosition {
     pub(crate) line: usize,
