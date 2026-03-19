@@ -582,7 +582,6 @@ impl ArborWindow {
                             "Close Pane",
                             0xeb6f92,
                         )
-                        .hover(|this| this.bg(rgb(0x3a2030)))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.hub_pane_context_menu = None;
                             this.hub_remove_terminal(terminal_id, cx);
