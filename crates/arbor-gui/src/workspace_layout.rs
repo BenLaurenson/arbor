@@ -217,6 +217,15 @@ impl ArborWindow {
             logs_tab_open: Some(self.logs_tab_open),
             logs_tab_active: Some(self.logs_tab_active),
             pull_request_cache: self.pull_request_cache_snapshot(),
+            custom_repo_icons: self.custom_repo_icons.clone(),
+            custom_repo_labels: self.custom_repo_labels.clone(),
+            custom_repo_urls: self.custom_repo_urls.clone(),
+            quick_launch_commands: self.quick_launch_commands.clone(),
+            hub_layout: if self.hub_layout.is_empty() {
+                None
+            } else {
+                Some(self.hub_layout.clone())
+            },
         }
     }
 
@@ -383,6 +392,31 @@ impl ArborWindow {
         let mut next_state = self.queued_ui_state_base();
         next_state.collapsed_repository_group_keys =
             self.collapsed_repository_group_keys_snapshot();
+        self.queue_ui_state_save(next_state, cx);
+    }
+
+    pub(crate) fn sync_custom_repo_icons_store(&mut self, cx: &mut Context<Self>) {
+        let mut next_state = self.queued_ui_state_base();
+        next_state.custom_repo_icons = self.custom_repo_icons.clone();
+        self.queue_ui_state_save(next_state, cx);
+    }
+
+    pub(crate) fn sync_repo_ui_settings_store(&mut self, cx: &mut Context<Self>) {
+        let mut next_state = self.queued_ui_state_base();
+        next_state.custom_repo_icons = self.custom_repo_icons.clone();
+        next_state.custom_repo_labels = self.custom_repo_labels.clone();
+        next_state.custom_repo_urls = self.custom_repo_urls.clone();
+        next_state.quick_launch_commands = self.quick_launch_commands.clone();
+        self.queue_ui_state_save(next_state, cx);
+    }
+
+    pub(crate) fn sync_hub_layout_store(&mut self, cx: &mut Context<Self>) {
+        let mut next_state = self.queued_ui_state_base();
+        next_state.hub_layout = if self.hub_layout.is_empty() {
+            None
+        } else {
+            Some(self.hub_layout.clone())
+        };
         self.queue_ui_state_save(next_state, cx);
     }
 

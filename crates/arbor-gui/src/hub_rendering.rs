@@ -1,6 +1,20 @@
 use {super::*, gpui::relative};
 
 impl ArborWindow {
+    /// Remove terminals from the hub layout that no longer exist in self.terminals.
+    #[allow(dead_code)]
+    pub(crate) fn hub_prune_stale_terminals(&mut self) {
+        let stale_ids: Vec<u64> = self
+            .hub_layout
+            .terminal_ids()
+            .into_iter()
+            .filter(|id| !self.terminals.iter().any(|t| t.id == *id))
+            .collect();
+        for id in stale_ids {
+            self.hub_layout.remove_terminal(id);
+        }
+    }
+
     /// Render the full hub view — a recursive split layout of terminal panes.
     pub(crate) fn render_hub_view(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let theme = self.theme();
@@ -433,6 +447,7 @@ impl ArborWindow {
         }
         self.hub_layout.add_terminal(terminal_id);
         self.hub_active_terminal_id = Some(terminal_id);
+        self.sync_hub_layout_store(cx);
         cx.notify();
     }
 }

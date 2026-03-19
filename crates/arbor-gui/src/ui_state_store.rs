@@ -41,6 +41,34 @@ pub struct UiState {
     /// Resolved pull request state by worktree path for fast startup rendering.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub pull_request_cache: HashMap<String, CachedPullRequestState>,
+    /// Custom icon image per repository group_key.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub custom_repo_icons: HashMap<String, CustomRepoIcon>,
+    /// Custom display labels per repository group_key.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub custom_repo_labels: HashMap<String, String>,
+    /// Custom URLs per repository group_key (opens on icon click instead of GitHub).
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub custom_repo_urls: HashMap<String, String>,
+    /// Quick launch command per repository group_key.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub quick_launch_commands: HashMap<String, String>,
+    /// Hub split layout tree, persisted across sessions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hub_layout: Option<crate::hub_layout::HubPane>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CustomRepoIcon {
+    pub path: String,
+    #[serde(default = "default_icon_scale")]
+    pub scale: f32,
+}
+
+impl Eq for CustomRepoIcon {}
+
+fn default_icon_scale() -> f32 {
+    1.0
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -173,7 +201,7 @@ fn home_dir() -> PathBuf {
 mod tests {
     use {
         super::{
-            CachedPullRequestState, JsonUiStateStore, PersistedRightPaneTab,
+            CachedPullRequestState, CustomRepoIcon, JsonUiStateStore, PersistedRightPaneTab,
             PersistedSidebarSelection, UiState, UiStateStore,
         },
         crate::{
@@ -309,6 +337,37 @@ mod tests {
         assert_eq!(loaded.right_pane_tab, state.right_pane_tab);
         assert_eq!(loaded.logs_tab_open, state.logs_tab_open);
         assert_eq!(loaded.logs_tab_active, state.logs_tab_active);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn json_ui_state_store_round_trips_custom_repo_icons() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock before unix epoch")
+            .as_nanos();
+        let path = env::temp_dir().join(format!("arbor-ui-state-icons-{unique}.json"));
+        let store = JsonUiStateStore::new(path.clone());
+
+        let state = UiState {
+            custom_repo_icons: HashMap::from([
+                ("repo-a".to_owned(), CustomRepoIcon {
+                    path: "/tmp/icon-a.png".to_owned(),
+                    scale: 1.5,
+                }),
+                ("repo-b".to_owned(), CustomRepoIcon {
+                    path: "/tmp/icon-b.svg".to_owned(),
+                    scale: 1.0,
+                }),
+            ]),
+            ..UiState::default()
+        };
+
+        store.save(&state).expect("save ui state");
+        let loaded = store.load().expect("load ui state");
+
+        assert_eq!(loaded.custom_repo_icons, state.custom_repo_icons);
 
         let _ = fs::remove_file(path);
     }

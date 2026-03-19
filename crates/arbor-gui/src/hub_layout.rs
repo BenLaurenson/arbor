@@ -38,6 +38,8 @@ pub(crate) enum HubPane {
     Empty,
 }
 
+impl Eq for HubPane {}
+
 #[allow(dead_code)]
 impl HubPane {
     /// Returns `true` if `terminal_id` exists anywhere in this tree.

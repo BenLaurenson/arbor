@@ -114,6 +114,10 @@ impl ArborWindow {
                 let startup_custom_repo_labels = startup_ui_state.custom_repo_labels.clone();
                 let startup_custom_repo_urls = startup_ui_state.custom_repo_urls.clone();
                 let startup_quick_launch_commands = startup_ui_state.quick_launch_commands.clone();
+                let startup_hub_layout = startup_ui_state
+                    .hub_layout
+                    .clone()
+                    .unwrap_or(hub_layout::HubPane::Empty);
                 let configured_embedded_shell = loaded_config.config.embedded_shell.clone();
                 let notifications_enabled = loaded_config.config.notifications.unwrap_or(true);
                 let remote_hosts: Vec<arbor_core::outpost::RemoteHost> = loaded_config
@@ -330,7 +334,7 @@ impl ArborWindow {
                     agent_selector_search_cursor: 0,
                     chat_mode_selector_open_for: None,
                     center_tab_order: Vec::new(),
-                    hub_layout: hub_layout::HubPane::Empty,
+                    hub_layout: startup_hub_layout,
                     hub_active_terminal_id: None,
                     new_tab_menu_position: None,
                     repository_context_menu: None,
@@ -753,7 +757,10 @@ impl ArborWindow {
             agent_selector_search_cursor: 0,
             chat_mode_selector_open_for: None,
             center_tab_order: Vec::new(),
-            hub_layout: hub_layout::HubPane::Empty,
+            hub_layout: startup_ui_state
+                .hub_layout
+                .clone()
+                .unwrap_or(hub_layout::HubPane::Empty),
             hub_active_terminal_id: None,
             new_tab_menu_position: None,
             repository_context_menu: None,
