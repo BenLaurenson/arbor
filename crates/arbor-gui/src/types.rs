@@ -1027,6 +1027,7 @@ impl TerminalRuntimeHandle for DaemonTerminalRuntime {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CenterTab {
+    Hub,
     Terminal(u64),
     Diff(u64),
     FileView(u64),
@@ -2404,6 +2405,8 @@ pub(crate) struct ArborWindow {
     pub(crate) chat_mode_selector_open_for: Option<u64>,
     /// Tracks creation order of center tabs for stable tab bar ordering.
     pub(crate) center_tab_order: Vec<CenterTab>,
+    pub(crate) hub_layout: hub_layout::HubPane,
+    pub(crate) hub_active_terminal_id: Option<u64>,
     pub(crate) new_tab_menu_position: Option<gpui::Point<Pixels>>,
     pub(crate) repository_context_menu: Option<RepositoryContextMenu>,
     pub(crate) worktree_context_menu: Option<WorktreeContextMenu>,

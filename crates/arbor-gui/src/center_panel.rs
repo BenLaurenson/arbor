@@ -417,6 +417,9 @@ impl ArborWindow {
                     })
                     .when(active_tab == Some(CenterTab::Logs), |this| {
                         this.child(self.render_logs_content(cx))
+                    })
+                    .when(active_tab == Some(CenterTab::Hub), |this| {
+                        this.child(self.render_hub_view(cx))
                     }),
             )
     }
@@ -441,6 +444,16 @@ impl ArborWindow {
             theme.text_muted
         };
         let (tab_icon, tab_label, terminal_icon) = match tab {
+            CenterTab::Hub => (
+                div()
+                    .font_family(FONT_MONO)
+                    .text_size(px(14.))
+                    .text_color(rgb(text_color))
+                    .child("\u{f009}") // grid icon
+                    .into_any_element(),
+                "Hub".to_owned(),
+                false,
+            ),
             CenterTab::Terminal(session_id) => (
                 terminal_tab_icon_element(is_active, text_color, 16.0).into_any_element(),
                 self.terminals
@@ -510,6 +523,7 @@ impl ArborWindow {
             ),
         };
         let tab_id = match tab {
+            CenterTab::Hub => ("center-tab-hub", 0),
             CenterTab::Terminal(id) => ("center-tab-terminal", id),
             CenterTab::Diff(id) => ("center-tab-diff", id),
             CenterTab::FileView(id) => ("center-tab-fileview", id),
@@ -549,6 +563,7 @@ impl ArborWindow {
             .child(
                 div()
                     .id(match tab {
+                        CenterTab::Hub => ("tab-close-hub", 0),
                         CenterTab::Terminal(id) => ("tab-close-terminal", id),
                         CenterTab::Diff(id) => ("tab-close-diff", id),
                         CenterTab::FileView(id) => ("tab-close-fileview", id),
@@ -574,6 +589,9 @@ impl ArborWindow {
                         cx.listener(move |this, _: &MouseDownEvent, window, cx| {
                             cx.stop_propagation();
                             match tab {
+                                CenterTab::Hub => {
+                                    // Hub tab cannot be closed — no-op
+                                },
                                 CenterTab::Terminal(session_id) => {
                                     if this.close_terminal_session_by_id(session_id) {
                                         this.sync_daemon_session_store(cx);
@@ -628,6 +646,11 @@ impl ArborWindow {
                 None => this.border_b_1(),
             })
             .on_click(cx.listener(move |this, _, window, cx| match tab {
+                CenterTab::Hub => {
+                    this.logs_tab_active = false;
+                    this.active_diff_session_id = None;
+                    cx.notify();
+                },
                 CenterTab::Terminal(session_id) => {
                     this.logs_tab_active = false;
                     this.select_terminal(session_id, window, cx);

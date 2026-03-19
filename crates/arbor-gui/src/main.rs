@@ -34,6 +34,7 @@ mod github_service;
 mod graphql;
 mod helpers;
 mod hub_layout;
+mod hub_rendering;
 mod issue_cache_store;
 mod issue_details_modal;
 mod key_handling;

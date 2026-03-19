@@ -1025,6 +1025,9 @@ impl ArborWindow {
 
     pub(crate) fn close_active_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         match self.active_center_tab_for_selected_worktree() {
+            Some(CenterTab::Hub) => {
+                // Hub tab cannot be closed
+            },
             Some(CenterTab::Terminal(session_id)) => {
                 if self.close_terminal_session_by_id(session_id) {
                     self.sync_daemon_session_store(cx);
@@ -1112,6 +1115,9 @@ impl ArborWindow {
         self.active_terminal_by_worktree.remove(&worktree_path);
 
         match tab {
+            Some(CenterTab::Hub) => {
+                // Hub is always present — nothing to activate
+            },
             Some(CenterTab::Terminal(session_id)) => {
                 self.active_terminal_by_worktree
                     .insert(worktree_path, session_id);
