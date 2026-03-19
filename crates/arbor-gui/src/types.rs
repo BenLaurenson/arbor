@@ -2158,6 +2158,11 @@ pub(crate) struct SessionContextMenu {
     pub(crate) position: gpui::Point<Pixels>,
 }
 
+pub(crate) struct HubPaneContextMenu {
+    pub(crate) terminal_id: u64,
+    pub(crate) position: gpui::Point<Pixels>,
+}
+
 pub(crate) struct RepoSettingsModal {
     pub(crate) repository_index: usize,
     pub(crate) group_key: String,
@@ -2426,6 +2431,7 @@ pub(crate) struct ArborWindow {
     pub(crate) repository_context_menu: Option<RepositoryContextMenu>,
     pub(crate) worktree_context_menu: Option<WorktreeContextMenu>,
     pub(crate) session_context_menu: Option<SessionContextMenu>,
+    pub(crate) hub_pane_context_menu: Option<HubPaneContextMenu>,
     pub(crate) inactive_sessions_expanded: HashSet<usize>,
     pub(crate) worktree_hover_popover: Option<WorktreeHoverPopover>,
     pub(crate) custom_repo_icons: HashMap<String, ui_state_store::CustomRepoIcon>,

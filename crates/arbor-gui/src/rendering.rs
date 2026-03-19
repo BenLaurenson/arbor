@@ -285,6 +285,7 @@ impl Render for ArborWindow {
             .child(self.render_repo_settings_modal(cx))
             .child(self.render_worktree_context_menu(cx))
             .child(self.render_session_context_menu(cx))
+            .child(self.render_hub_pane_context_menu(cx))
             .child(self.render_worktree_hover_popover(cx))
             .child(self.render_outpost_context_menu(cx))
             .child(self.render_delete_modal(cx))

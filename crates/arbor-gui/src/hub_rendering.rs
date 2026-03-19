@@ -195,6 +195,7 @@ impl ArborWindow {
         };
 
         let tid = terminal_id;
+        let tid_ctx = terminal_id;
 
         div()
             .id(ElementId::Name(format!("hub-pane-{terminal_id}").into()))
@@ -211,6 +212,17 @@ impl ArborWindow {
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.hub_focus_terminal(tid, window, cx);
             }))
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                    cx.stop_propagation();
+                    this.hub_pane_context_menu = Some(HubPaneContextMenu {
+                        terminal_id: tid_ctx,
+                        position: event.position,
+                    });
+                    cx.notify();
+                }),
+            )
             // Pane header bar
             .child(
                 div()
@@ -447,6 +459,153 @@ impl ArborWindow {
         }
         self.hub_layout.add_terminal(terminal_id);
         self.hub_active_terminal_id = Some(terminal_id);
+        self.sync_hub_layout_store(cx);
+        cx.notify();
+    }
+
+    /// Remove a terminal from the hub layout and collapse empty splits.
+    pub(crate) fn hub_remove_terminal(&mut self, terminal_id: u64, cx: &mut Context<Self>) {
+        self.hub_layout.remove_terminal(terminal_id);
+        if self.hub_active_terminal_id == Some(terminal_id) {
+            self.hub_active_terminal_id = self.hub_layout.terminal_ids().first().copied();
+        }
+        self.sync_hub_layout_store(cx);
+        cx.notify();
+    }
+
+    /// Render the hub pane context menu (right-click on a terminal pane).
+    pub(crate) fn render_hub_pane_context_menu(&mut self, cx: &mut Context<Self>) -> Div {
+        let Some(menu) = self.hub_pane_context_menu.as_ref() else {
+            return div();
+        };
+
+        let theme = self.theme();
+        let position = menu.position;
+        let terminal_id = menu.terminal_id;
+
+        let menu_item = |id: &'static str, icon: &'static str, label: &'static str, color: u32| {
+            div()
+                .id(id)
+                .h(px(30.))
+                .mx(px(4.))
+                .px(px(8.))
+                .rounded_sm()
+                .cursor_pointer()
+                .hover(|this| this.bg(rgb(theme.panel_active_bg)))
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .child(
+                    div()
+                        .font_family(FONT_MONO)
+                        .text_size(px(14.))
+                        .text_color(rgb(color))
+                        .child(icon),
+                )
+                .child(div().text_size(px(13.)).text_color(rgb(color)).child(label))
+        };
+
+        div()
+            .absolute()
+            .inset_0()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| {
+                    this.hub_pane_context_menu = None;
+                    cx.stop_propagation();
+                    cx.notify();
+                }),
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|this, _, _, cx| {
+                    this.hub_pane_context_menu = None;
+                    cx.stop_propagation();
+                    cx.notify();
+                }),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .left(position.x)
+                    .top(position.y)
+                    .w(px(180.))
+                    .py(px(4.))
+                    .rounded_sm()
+                    .border_1()
+                    .border_color(rgb(theme.border))
+                    .bg(rgb(theme.chrome_bg))
+                    .on_mouse_move(|_, _, cx| cx.stop_propagation())
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
+                    // Split Right
+                    .child(
+                        menu_item(
+                            "hub-ctx-split-right",
+                            "\u{f105}", // arrow right
+                            "Split Right",
+                            theme.text_primary,
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.hub_pane_context_menu = None;
+                            this.hub_split_pane(
+                                terminal_id,
+                                hub_layout::DropZone::Right,
+                                cx,
+                            );
+                        })),
+                    )
+                    // Split Down
+                    .child(
+                        menu_item(
+                            "hub-ctx-split-down",
+                            "\u{f107}", // arrow down
+                            "Split Down",
+                            theme.text_primary,
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.hub_pane_context_menu = None;
+                            this.hub_split_pane(
+                                terminal_id,
+                                hub_layout::DropZone::Bottom,
+                                cx,
+                            );
+                        })),
+                    )
+                    // Divider
+                    .child(div().h(px(1.)).mx(px(8.)).my(px(4.)).bg(rgb(theme.border)))
+                    // Close Pane
+                    .child(
+                        menu_item(
+                            "hub-ctx-close",
+                            "\u{f00d}", // x icon
+                            "Close Pane",
+                            0xeb6f92,
+                        )
+                        .hover(|this| this.bg(rgb(0x3a2030)))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.hub_pane_context_menu = None;
+                            this.hub_remove_terminal(terminal_id, cx);
+                        })),
+                    ),
+            )
+    }
+
+    /// Split a hub pane by spawning a new terminal in the same worktree.
+    fn hub_split_pane(
+        &mut self,
+        terminal_id: u64,
+        zone: hub_layout::DropZone,
+        cx: &mut Context<Self>,
+    ) {
+        // Use a sentinel ID for the placeholder, then replace with Empty
+        let placeholder_id = u64::MAX;
+        if self.hub_layout.split_at(terminal_id, placeholder_id, zone) {
+            self.hub_layout.remove_terminal(placeholder_id);
+            if !self.hub_layout.contains_terminal(terminal_id) {
+                self.hub_layout.add_terminal(terminal_id);
+            }
+        }
         self.sync_hub_layout_store(cx);
         cx.notify();
     }

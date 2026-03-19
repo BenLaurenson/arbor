@@ -1808,6 +1808,7 @@ impl ArborWindow {
         self.repository_context_menu = None;
         self.worktree_context_menu = None;
         self.session_context_menu = None;
+        self.hub_pane_context_menu = None;
         self._hover_show_task = None;
         self.worktree_hover_popover = None;
         self.active_remote_worktree = None;
