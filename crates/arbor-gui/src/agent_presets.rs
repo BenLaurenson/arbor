@@ -295,6 +295,80 @@ impl ArborWindow {
         cx.notify();
     }
 
+    pub(crate) fn quick_launch_agent(
+        &mut self,
+        repository_index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Select the repo
+        if self.active_repository_index != Some(repository_index) {
+            self.select_repository(repository_index, cx);
+        }
+
+        // Find a worktree for this repo and select it
+        let group_key = match self.repositories.get(repository_index) {
+            Some(repo) => repo.group_key.clone(),
+            None => return,
+        };
+        let worktree_index = self
+            .worktrees
+            .iter()
+            .enumerate()
+            .find(|(_, w)| w.group_key == group_key)
+            .map(|(i, _)| i);
+        if let Some(idx) = worktree_index {
+            self.select_worktree(idx, window, cx);
+        } else {
+            self.notice = Some("No worktree available for this repository".to_owned());
+            cx.notify();
+            return;
+        }
+
+        // Build the launch command
+        let command = self
+            .quick_launch_commands
+            .get(&group_key)
+            .cloned()
+            .unwrap_or_else(|| "claude --dangerously-skip-permissions".to_owned());
+
+        // Spawn terminal and write command
+        let terminal_count_before = self.terminals.len();
+        self.spawn_terminal_session(window, cx);
+        if self.terminals.len() <= terminal_count_before {
+            return;
+        }
+
+        let Some(session_id) = self.terminals.last().map(|session| session.id) else {
+            return;
+        };
+
+        let input = format!("{command}\n");
+        if let Err(error) = self.write_input_to_terminal(session_id, input.as_bytes()) {
+            self.notice = Some(format!("failed to launch agent: {error}"));
+            cx.notify();
+            return;
+        }
+
+        if let Some(session) = self
+            .terminals
+            .iter_mut()
+            .find(|session| session.id == session_id)
+        {
+            session.agent_preset = Some(AgentPresetKind::Claude);
+            session.execution_mode = Some(self.execution_mode);
+            session.last_command = Some(command);
+            session.pending_command.clear();
+            session.updated_at_unix_ms = current_unix_timestamp_millis();
+        }
+
+        // Add terminal to the Hub layout
+        self.hub_add_terminal(session_id, cx);
+
+        self.sync_daemon_session_store(cx);
+        cx.notify();
+    }
+
     pub(crate) fn set_execution_mode(
         &mut self,
         mode: ExecutionMode,

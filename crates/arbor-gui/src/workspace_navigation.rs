@@ -1792,6 +1792,9 @@ impl ArborWindow {
             session.updated_at_unix_ms = current_unix_timestamp_millis();
         }
 
+        // Add terminal to the Hub layout
+        self.hub_add_terminal(terminal_id, cx);
+
         self.sync_daemon_session_store(cx);
         cx.notify();
     }

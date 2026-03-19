@@ -49,10 +49,13 @@ impl ArborWindow {
         let diff_sessions = self.selected_worktree_diff_sessions();
         let file_view_sessions = self.selected_worktree_file_view_sessions();
         // Collect all current tabs for this worktree (unordered)
-        let mut current_tabs: Vec<CenterTab> = terminals
-            .iter()
-            .map(|session| CenterTab::Terminal(session.id))
-            .collect();
+        // Hub tab is always present as the first tab
+        let mut current_tabs: Vec<CenterTab> = vec![CenterTab::Hub];
+        current_tabs.extend(
+            terminals
+                .iter()
+                .map(|session| CenterTab::Terminal(session.id)),
+        );
         current_tabs.extend(
             diff_sessions
                 .iter()
@@ -148,7 +151,8 @@ impl ArborWindow {
             && active_diff_session.is_none()
             && active_file_view_session.is_none()
             && active_agent_chat.is_none()
-            && active_tab != Some(CenterTab::Logs);
+            && active_tab != Some(CenterTab::Logs)
+            && active_tab != Some(CenterTab::Hub);
 
         div()
             .flex_1()
@@ -582,7 +586,9 @@ impl ArborWindow {
                     .text_size(px(24.))
                     .text_color(rgb(theme.text_muted))
                     .invisible()
-                    .group_hover("tab", |s| s.visible())
+                    .when(tab != CenterTab::Hub, |this| {
+                        this.group_hover("tab", |s| s.visible())
+                    })
                     .child("\u{00d7}")
                     .on_mouse_down(
                         MouseButton::Left,

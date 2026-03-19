@@ -351,7 +351,6 @@ impl ArborWindow {
 
     /// Add a terminal to the hub layout. If the terminal is already present,
     /// focus it instead.
-    #[allow(dead_code)]
     pub(crate) fn hub_add_terminal(&mut self, terminal_id: u64, cx: &mut Context<Self>) {
         if self.hub_layout.contains_terminal(terminal_id) {
             self.hub_active_terminal_id = Some(terminal_id);
