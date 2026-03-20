@@ -187,8 +187,10 @@ impl ArborWindow {
                 .runs
                 .into_iter()
                 .map(|mut run| {
-                    if run.text.len() > pane_cols {
-                        run.text.truncate(pane_cols);
+                    // Truncate by character count, not byte count
+                    let char_count: usize = run.text.chars().count();
+                    if char_count > pane_cols {
+                        run.text = run.text.chars().take(pane_cols).collect();
                     }
                     run
                 })
