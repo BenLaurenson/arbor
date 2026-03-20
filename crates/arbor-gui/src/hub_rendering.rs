@@ -593,21 +593,14 @@ impl ArborWindow {
             )
     }
 
-    /// Split a hub pane by spawning a new terminal in the same worktree.
+    /// Split a hub pane, creating an empty slot next to the target terminal.
     fn hub_split_pane(
         &mut self,
         terminal_id: u64,
         zone: hub_layout::DropZone,
         cx: &mut Context<Self>,
     ) {
-        // Use a sentinel ID for the placeholder, then replace with Empty
-        let placeholder_id = u64::MAX;
-        if self.hub_layout.split_at(terminal_id, placeholder_id, zone) {
-            self.hub_layout.remove_terminal(placeholder_id);
-            if !self.hub_layout.contains_terminal(terminal_id) {
-                self.hub_layout.add_terminal(terminal_id);
-            }
-        }
+        self.hub_layout.split_with_empty(terminal_id, zone);
         self.sync_hub_layout_store(cx);
         cx.notify();
     }

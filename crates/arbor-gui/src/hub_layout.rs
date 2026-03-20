@@ -135,6 +135,61 @@ impl HubPane {
         }
     }
 
+    /// Split the pane containing `target_id`, placing an `Empty` pane
+    /// in the position indicated by `zone`. Unlike `split_at`, this does
+    /// not require a new terminal ID — the empty slot can be filled later.
+    pub(crate) fn split_with_empty(&mut self, target_id: u64, zone: DropZone) -> bool {
+        match self {
+            Self::Terminal(id) if *id == target_id => {
+                let existing = Box::new(Self::Terminal(target_id));
+                let empty = Box::new(Self::Empty);
+                match zone {
+                    DropZone::Center => false, // replacing with empty makes no sense
+                    DropZone::Left => {
+                        *self = Self::Split {
+                            direction: SplitDirection::Horizontal,
+                            ratio: 0.5,
+                            first: empty,
+                            second: existing,
+                        };
+                        true
+                    },
+                    DropZone::Right => {
+                        *self = Self::Split {
+                            direction: SplitDirection::Horizontal,
+                            ratio: 0.5,
+                            first: existing,
+                            second: empty,
+                        };
+                        true
+                    },
+                    DropZone::Top => {
+                        *self = Self::Split {
+                            direction: SplitDirection::Vertical,
+                            ratio: 0.5,
+                            first: empty,
+                            second: existing,
+                        };
+                        true
+                    },
+                    DropZone::Bottom => {
+                        *self = Self::Split {
+                            direction: SplitDirection::Vertical,
+                            ratio: 0.5,
+                            first: existing,
+                            second: empty,
+                        };
+                        true
+                    },
+                }
+            },
+            Self::Split { first, second, .. } => {
+                first.split_with_empty(target_id, zone) || second.split_with_empty(target_id, zone)
+            },
+            _ => false,
+        }
+    }
+
     /// Remove a terminal from the tree and collapse any resulting
     /// single-child splits. Returns `true` if the terminal was found
     /// and removed.
