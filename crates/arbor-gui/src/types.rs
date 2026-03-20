@@ -2427,6 +2427,8 @@ pub(crate) struct ArborWindow {
     pub(crate) center_tab_order: Vec<CenterTab>,
     pub(crate) hub_layout: hub_layout::HubPane,
     pub(crate) hub_active_terminal_id: Option<u64>,
+    /// Claude session IDs that are connected to hub terminals (for sidebar active state).
+    pub(crate) hub_connected_session_ids: HashSet<String>,
     pub(crate) new_tab_menu_position: Option<gpui::Point<Pixels>>,
     pub(crate) repository_context_menu: Option<RepositoryContextMenu>,
     pub(crate) worktree_context_menu: Option<WorktreeContextMenu>,

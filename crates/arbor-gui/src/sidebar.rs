@@ -1336,20 +1336,10 @@ impl ArborWindow {
 
         if !compact_sidebar && !sessions.is_empty() {
             // A session is considered "active" if the file was recently modified
-            // OR if a terminal with a matching resume command is running in the Hub
-            let hub_terminal_commands: Vec<String> = self
-                .hub_layout
-                .terminal_ids()
-                .iter()
-                .filter_map(|tid| {
-                    self.terminals
-                        .iter()
-                        .find(|t| t.id == *tid)
-                        .and_then(|t| t.last_command.clone())
-                })
-                .collect();
+            // OR if it's connected to a terminal in the Hub
+            let hub_ids = &self.hub_connected_session_ids;
             let is_session_active = |s: &arbor_core::session::AgentSessionSummary| {
-                s.is_active || hub_terminal_commands.iter().any(|cmd| cmd.contains(&s.id))
+                s.is_active || hub_ids.contains(&s.id)
             };
 
             let active_sessions: Vec<_> = sessions
@@ -1446,13 +1436,7 @@ impl ArborWindow {
     ) -> Stateful<Div> {
         let theme = self.theme();
         let display_name = arbor_core::session::session_display_name(session);
-        let is_hub_connected = self.hub_layout.terminal_ids().iter().any(|tid| {
-            self.terminals
-                .iter()
-                .find(|t| t.id == *tid)
-                .and_then(|t| t.last_command.as_ref())
-                .is_some_and(|cmd| cmd.contains(&session.id))
-        });
+        let is_hub_connected = self.hub_connected_session_ids.contains(&session.id);
         let dot_color = if session.is_active || is_hub_connected {
             0x72d69c_u32 // green
         } else {

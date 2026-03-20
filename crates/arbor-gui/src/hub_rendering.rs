@@ -471,6 +471,14 @@ impl ArborWindow {
     /// Remove a terminal from the hub layout, close the terminal session,
     /// and collapse empty splits.
     pub(crate) fn hub_remove_terminal(&mut self, terminal_id: u64, cx: &mut Context<Self>) {
+        // Remove from connected session tracking
+        if let Some(session) = self.terminals.iter().find(|t| t.id == terminal_id)
+            && let Some(cmd) = &session.last_command
+            && let Some(sid) = cmd.strip_prefix("claude --resume ")
+        {
+            self.hub_connected_session_ids
+                .remove(sid.trim_end_matches('\n'));
+        }
         self.hub_layout.remove_terminal(terminal_id);
         // Also close the actual terminal session
         self.close_terminal_session_by_id(terminal_id);

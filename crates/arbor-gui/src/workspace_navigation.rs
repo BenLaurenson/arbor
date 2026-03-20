@@ -1808,6 +1808,9 @@ impl ArborWindow {
             session.updated_at_unix_ms = current_unix_timestamp_millis();
         }
 
+        // Track this Claude session as connected to the Hub
+        self.hub_connected_session_ids.insert(session_id.to_owned());
+
         // Add terminal to the Hub layout
         self.hub_add_terminal(terminal_id, cx);
 
