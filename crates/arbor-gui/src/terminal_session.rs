@@ -308,9 +308,11 @@ impl ArborWindow {
             };
 
             let session_id = self.terminals[index].id;
-            let is_active = active_terminal_id == Some(session_id);
+            let is_hub_terminal = hub_terminal_ids.contains(&session_id);
+            // Hub terminals are always treated as "active" for resize/sync purposes
+            let is_active = active_terminal_id == Some(session_id) || is_hub_terminal;
             // Use per-pane grid sizes captured during paint by canvas callbacks
-            let effective_grid_size = if hub_terminal_ids.contains(&session_id) {
+            let effective_grid_size = if is_hub_terminal {
                 self.hub_pane_grid_sizes.get(&session_id).copied()
             } else {
                 target_grid_size

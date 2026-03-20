@@ -305,80 +305,85 @@ impl ArborWindow {
                     .min_w_0()
                     .min_h_0()
                     .overflow_hidden()
-                    .font(mono_font.clone())
-                    .text_size(px(TERMINAL_FONT_SIZE_PX))
-                    .line_height(px(line_height))
-                    .px_2()
-                    .pt_1()
+                    .relative()
+                    // Canvas measures the VIEWPORT (fixed parent), not scroll content
+                    .child(
+                        canvas(
+                            move |bounds, _window, cx| {
+                                let width = (bounds.size.width.to_f64() as f32
+                                    - TERMINAL_SCROLLBAR_WIDTH_PX
+                                    - 16.0) // px_2 padding
+                                    .max(1.0);
+                                let height =
+                                    (bounds.size.height.to_f64() as f32 - 4.0).max(1.0);
+                                if let Some((rows, cols)) =
+                                    terminal_grid_size_for_viewport(width, height, cw, lh)
+                                {
+                                    let pw =
+                                        width.floor().clamp(1., f32::from(u16::MAX)) as u16;
+                                    let ph =
+                                        height.floor().clamp(1., f32::from(u16::MAX)) as u16;
+                                    if let Some(entity) = entity.upgrade() {
+                                        entity.update(
+                                            cx,
+                                            |this: &mut ArborWindow, _cx| {
+                                                this.hub_pane_grid_sizes.insert(
+                                                    terminal_id,
+                                                    (rows, cols, pw, ph),
+                                                );
+                                            },
+                                        );
+                                    }
+                                }
+                            },
+                            |_, _, _, _| {},
+                        )
+                        .size_full()
+                        .absolute()
+                        .inset_0(),
+                    )
+                    // Terminal content on top of the measurement canvas
                     .child(
                         div()
-                            .id(ElementId::Name(
-                                format!("hub-terminal-scroll-{terminal_id}").into(),
-                            ))
-                            .flex_1()
-                            .w_full()
-                            .min_w_0()
-                            .min_h_0()
-                            .overflow_x_hidden()
-                            .overflow_y_scroll()
-                            .scrollbar_width(px(TERMINAL_SCROLLBAR_WIDTH_PX))
-                            // Canvas at top of scroll content to measure bounds
-                            .child(
-                                canvas(
-                                    move |bounds, _window, cx| {
-                                        let width = (bounds.size.width.to_f64() as f32
-                                            - TERMINAL_SCROLLBAR_WIDTH_PX)
-                                            .max(1.0);
-                                        let height =
-                                            (bounds.size.height.to_f64() as f32).max(1.0);
-                                        if let Some((rows, cols)) =
-                                            terminal_grid_size_for_viewport(
-                                                width, height, cw, lh,
-                                            )
-                                        {
-                                            let pw = width
-                                                .floor()
-                                                .clamp(1., f32::from(u16::MAX))
-                                                as u16;
-                                            let ph = height
-                                                .floor()
-                                                .clamp(1., f32::from(u16::MAX))
-                                                as u16;
-                                            if let Some(entity) = entity.upgrade() {
-                                                entity.update(
-                                                    cx,
-                                                    |this: &mut ArborWindow, _cx| {
-                                                        this.hub_pane_grid_sizes.insert(
-                                                            terminal_id,
-                                                            (rows, cols, pw, ph),
-                                                        );
-                                                    },
-                                                );
-                                            }
-                                        }
-                                    },
-                                    |_, _, _, _| {},
-                                )
-                                .w_full()
-                                .h(px(0.)),
-                            )
+                            .absolute()
+                            .inset_0()
+                            .overflow_hidden()
+                            .font(mono_font.clone())
+                            .text_size(px(TERMINAL_FONT_SIZE_PX))
+                            .line_height(px(line_height))
+                            .px_2()
+                            .pt_1()
                             .child(
                                 div()
-                                    .w_full()
+                                    .id(ElementId::Name(
+                                        format!("hub-terminal-scroll-{terminal_id}").into(),
+                                    ))
+                                    .size_full()
                                     .min_w_0()
-                                    .flex_none()
-                                    .flex()
-                                    .flex_col()
-                                    .gap_0()
-                                    .children(styled_lines.into_iter().map(|line| {
-                                        render_terminal_line(
-                                            line,
-                                            theme,
-                                            cell_width,
-                                            line_height,
-                                            mono_font.clone(),
-                                        )
-                                    })),
+                                    .min_h_0()
+                                    .overflow_x_hidden()
+                                    .overflow_y_scroll()
+                                    .scrollbar_width(px(TERMINAL_SCROLLBAR_WIDTH_PX))
+                                    .child(
+                                        div()
+                                            .w_full()
+                                            .min_w_0()
+                                            .flex_none()
+                                            .flex()
+                                            .flex_col()
+                                            .gap_0()
+                                            .children(styled_lines.into_iter().map(
+                                                |line| {
+                                                    render_terminal_line(
+                                                        line,
+                                                        theme,
+                                                        cell_width,
+                                                        line_height,
+                                                        mono_font.clone(),
+                                                    )
+                                                },
+                                            )),
+                                    ),
                             ),
                     )
             })
