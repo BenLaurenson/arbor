@@ -164,17 +164,38 @@ impl ArborWindow {
                 );
         };
 
-        // Build styled lines — limit to last 80 lines for performance
-        // (full scrollback is in the terminal session, we just render the tail)
+        // Build styled lines — limit to last 80 lines and truncate to pane width
         let selection = self.terminal_selection_for_session(session.id);
         let ime_text = self.ime_marked_text.as_deref();
         let all_lines = styled_lines_for_session(session, theme, is_focused, selection, ime_text);
         let max_visible = 80;
-        let styled_lines = if all_lines.len() > max_visible {
+        let pane_cols = self
+            .hub_pane_grid_sizes
+            .get(&terminal_id)
+            .map(|(_, cols, ..)| *cols as usize)
+            .unwrap_or(120);
+        let styled_lines: Vec<_> = if all_lines.len() > max_visible {
             all_lines[all_lines.len() - max_visible..].to_vec()
         } else {
             all_lines
-        };
+        }
+        .into_iter()
+        .map(|mut line| {
+            // Truncate cells to pane column count to prevent overflow
+            line.cells.truncate(pane_cols);
+            line.runs = line
+                .runs
+                .into_iter()
+                .map(|mut run| {
+                    if run.text.len() > pane_cols {
+                        run.text.truncate(pane_cols);
+                    }
+                    run
+                })
+                .collect();
+            line
+        })
+        .collect();
         let mono_font = terminal_mono_font(cx);
         let cell_width = terminal_cell_width_px(cx);
         let line_height = terminal_line_height_px(cx);
