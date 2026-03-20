@@ -1773,6 +1773,9 @@ impl ArborWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // Set hub active BEFORE select_worktree so ensure_selected_worktree_terminal
+        // skips standalone tab registration
+        self.hub_tab_active = true;
         self.select_worktree(worktree_index, window, cx);
 
         let command = format!("claude --resume {session_id}\n");
@@ -1785,6 +1788,11 @@ impl ArborWindow {
         let Some(terminal_id) = self.terminals.last().map(|s| s.id) else {
             return;
         };
+
+        // Remove from standalone tab tracking immediately
+        if let Some(worktree) = self.worktrees.get(worktree_index) {
+            self.active_terminal_by_worktree.remove(&worktree.path);
+        }
 
         if let Err(error) = self.write_input_to_terminal(terminal_id, command.as_bytes()) {
             self.notice = Some(format!("failed to resume session: {error}"));
@@ -1800,13 +1808,8 @@ impl ArborWindow {
             session.updated_at_unix_ms = current_unix_timestamp_millis();
         }
 
-        // Add terminal to the Hub layout and keep Hub as active view
+        // Add terminal to the Hub layout
         self.hub_add_terminal(terminal_id, cx);
-        self.hub_tab_active = true;
-        // Remove from standalone terminal tab tracking so it only shows in Hub
-        if let Some(worktree) = self.worktrees.get(worktree_index) {
-            self.active_terminal_by_worktree.remove(&worktree.path);
-        }
 
         self.sync_daemon_session_store(cx);
         cx.notify();

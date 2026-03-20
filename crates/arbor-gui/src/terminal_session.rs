@@ -377,8 +377,11 @@ impl ArborWindow {
         let backend_kind = self.active_backend_kind;
         let session_id = self.next_terminal_id;
         self.next_terminal_id += 1;
-        self.active_terminal_by_worktree
-            .insert(cwd.clone(), session_id);
+        // Only register as standalone tab when Hub is not the active view
+        if !self.hub_tab_active {
+            self.active_terminal_by_worktree
+                .insert(cwd.clone(), session_id);
+        }
         let title = format!("term-{session_id}");
         self.terminals.push(TerminalSession {
             id: session_id,
