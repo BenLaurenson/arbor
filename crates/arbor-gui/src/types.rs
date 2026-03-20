@@ -2425,6 +2425,7 @@ pub(crate) struct ArborWindow {
     pub(crate) chat_mode_selector_open_for: Option<u64>,
     /// Tracks creation order of center tabs for stable tab bar ordering.
     pub(crate) center_tab_order: Vec<CenterTab>,
+    pub(crate) terminal_font_scale: f32,
     pub(crate) hub_layout: hub_layout::HubPane,
     pub(crate) hub_active_terminal_id: Option<u64>,
     /// Per-hub-terminal grid sizes captured during paint via canvas bounds.

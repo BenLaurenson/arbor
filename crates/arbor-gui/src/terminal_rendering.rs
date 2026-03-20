@@ -424,6 +424,24 @@ pub(crate) fn render_terminal_line(
     line_height: f32,
     mono_font: gpui::Font,
 ) -> Div {
+    render_terminal_line_with_font_size(
+        line,
+        theme,
+        cell_width,
+        line_height,
+        mono_font,
+        TERMINAL_FONT_SIZE_PX,
+    )
+}
+
+pub(crate) fn render_terminal_line_with_font_size(
+    line: TerminalStyledLine,
+    theme: ThemePalette,
+    cell_width: f32,
+    line_height: f32,
+    mono_font: gpui::Font,
+    font_size_px: f32,
+) -> Div {
     let cells = if line.cells.is_empty() {
         cells_from_runs(&line.runs)
     } else {
@@ -439,7 +457,7 @@ pub(crate) fn render_terminal_line(
             .overflow_x_hidden()
             .whitespace_nowrap()
             .font(mono_font)
-            .text_size(px(TERMINAL_FONT_SIZE_PX))
+            .text_size(px(font_size_px))
             .line_height(px(line_height))
             .bg(rgb(theme.terminal_bg))
             .text_color(rgb(theme.text_primary))
@@ -447,7 +465,7 @@ pub(crate) fn render_terminal_line(
     }
 
     let line_height = px(line_height);
-    let font_size = px(TERMINAL_FONT_SIZE_PX);
+    let font_size = px(font_size_px);
     let positioned_runs = positioned_runs_from_cells(&cells);
 
     div()

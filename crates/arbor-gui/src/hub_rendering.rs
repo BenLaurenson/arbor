@@ -199,8 +199,10 @@ impl ArborWindow {
         })
         .collect();
         let mono_font = terminal_mono_font(cx);
-        let cell_width = terminal_cell_width_px(cx);
-        let line_height = terminal_line_height_px(cx);
+        let scale = self.terminal_font_scale;
+        let cell_width = terminal_cell_width_px(cx) * scale;
+        let line_height = terminal_line_height_px(cx) * scale;
+        let font_size = TERMINAL_FONT_SIZE_PX * scale;
 
         // Pane header: shows session name/branch + worktree
         let pane_title = session
@@ -351,7 +353,7 @@ impl ArborWindow {
                             .inset_0()
                             .overflow_hidden()
                             .font(mono_font.clone())
-                            .text_size(px(TERMINAL_FONT_SIZE_PX))
+                            .text_size(px(font_size))
                             .line_height(px(line_height))
                             .px_2()
                             .pt_1()
@@ -376,12 +378,13 @@ impl ArborWindow {
                                             .gap_0()
                                             .children(styled_lines.into_iter().map(
                                                 |line| {
-                                                    render_terminal_line(
+                                                    render_terminal_line_with_font_size(
                                                         line,
                                                         theme,
                                                         cell_width,
                                                         line_height,
                                                         mono_font.clone(),
+                                                        font_size,
                                                     )
                                                 },
                                             )),
