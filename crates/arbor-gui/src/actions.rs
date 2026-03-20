@@ -23,7 +23,10 @@ actions!(arbor, [
     OpenSettings,
     OpenManageHosts,
     ConnectToHost,
-    RefreshReviewComments
+    RefreshReviewComments,
+    ZoomIn,
+    ZoomOut,
+    ZoomReset
 ]);
 
 #[derive(Clone, PartialEq, Debug, gpui::Action)]

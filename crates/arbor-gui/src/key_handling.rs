@@ -11,6 +11,76 @@ impl ArborWindow {
             return;
         }
 
+        // Repo settings modal takes priority over everything — it's a full overlay
+        if self.repo_settings_modal.is_some() {
+            match event.keystroke.key.as_str() {
+                "escape" => {
+                    self.repo_settings_modal = None;
+                    cx.notify();
+                    cx.stop_propagation();
+                    return;
+                },
+                "tab" => {
+                    if let Some(modal) = self.repo_settings_modal.as_mut() {
+                        let max_fields: usize = match modal.tab {
+                            RepoSettingsTab::General => 3,
+                            RepoSettingsTab::Branch => 1,
+                            RepoSettingsTab::Agent => 1,
+                            RepoSettingsTab::Notifications => 1,
+                        };
+                        if event.keystroke.modifiers.shift {
+                            modal.active_field = if modal.active_field == 0 {
+                                max_fields.saturating_sub(1)
+                            } else {
+                                modal.active_field - 1
+                            };
+                        } else {
+                            modal.active_field = (modal.active_field + 1) % max_fields;
+                        }
+                    }
+                    cx.notify();
+                    cx.stop_propagation();
+                    return;
+                },
+                "enter" | "return" => {
+                    self.save_repo_settings(cx);
+                    cx.stop_propagation();
+                    return;
+                },
+                _ => {},
+            }
+            if let Some(action) = text_edit_action_for_event(event, cx) {
+                if let Some(modal) = self.repo_settings_modal.as_mut() {
+                    let (text, cursor) = match modal.tab {
+                        RepoSettingsTab::General => match modal.active_field {
+                            0 => (&mut modal.label, &mut modal.label_cursor),
+                            1 => (&mut modal.custom_url, &mut modal.custom_url_cursor),
+                            _ => (
+                                &mut modal.quick_launch_command,
+                                &mut modal.quick_launch_command_cursor,
+                            ),
+                        },
+                        RepoSettingsTab::Branch => {
+                            (&mut modal.branch_prefix, &mut modal.branch_prefix_cursor)
+                        },
+                        RepoSettingsTab::Agent => (
+                            &mut modal.agent_default_preset,
+                            &mut modal.agent_default_preset_cursor,
+                        ),
+                        RepoSettingsTab::Notifications => (
+                            &mut modal.notifications_webhook_url,
+                            &mut modal.notifications_webhook_url_cursor,
+                        ),
+                    };
+                    apply_text_edit_action(text, cursor, &action);
+                    modal.error = None;
+                }
+                cx.notify();
+                cx.stop_propagation();
+            }
+            return;
+        }
+
         if self.welcome_clone_url_active {
             match event.keystroke.key.as_str() {
                 "escape" => {
@@ -642,6 +712,26 @@ impl ArborWindow {
         cx: &mut Context<Self>,
     ) {
         self.open_add_repository_picker(cx);
+    }
+
+    pub(crate) fn action_zoom_in(&mut self, _: &ZoomIn, _: &mut Window, cx: &mut Context<Self>) {
+        self.terminal_font_scale = (self.terminal_font_scale + 0.1).min(3.0);
+        cx.notify();
+    }
+
+    pub(crate) fn action_zoom_out(&mut self, _: &ZoomOut, _: &mut Window, cx: &mut Context<Self>) {
+        self.terminal_font_scale = (self.terminal_font_scale - 0.1).max(0.5);
+        cx.notify();
+    }
+
+    pub(crate) fn action_zoom_reset(
+        &mut self,
+        _: &ZoomReset,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.terminal_font_scale = 1.0;
+        cx.notify();
     }
 
     pub(crate) fn action_spawn_terminal(
