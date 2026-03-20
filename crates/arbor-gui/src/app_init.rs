@@ -334,7 +334,6 @@ impl ArborWindow {
                     agent_selector_search_cursor: 0,
                     chat_mode_selector_open_for: None,
                     center_tab_order: Vec::new(),
-                    terminal_font_scale: 1.0,
                     hub_layout: startup_hub_layout,
                     hub_active_terminal_id: None,
                     hub_connected_session_ids: HashSet::new(),
@@ -762,7 +761,6 @@ impl ArborWindow {
             agent_selector_search_cursor: 0,
             chat_mode_selector_open_for: None,
             center_tab_order: Vec::new(),
-            terminal_font_scale: 1.0,
             hub_layout: startup_ui_state
                 .hub_layout
                 .clone()
