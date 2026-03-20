@@ -732,6 +732,11 @@ impl ArborWindow {
             return false;
         }
 
+        // When Hub is the active view, don't register terminals as standalone tabs
+        if self.hub_tab_active {
+            return false;
+        }
+
         let Some(worktree_path) = self.selected_worktree_path().map(Path::to_path_buf) else {
             return false;
         };
@@ -1800,8 +1805,7 @@ impl ArborWindow {
         self.hub_tab_active = true;
         // Remove from standalone terminal tab tracking so it only shows in Hub
         if let Some(worktree) = self.worktrees.get(worktree_index) {
-            self.active_terminal_by_worktree
-                .remove(&worktree.path);
+            self.active_terminal_by_worktree.remove(&worktree.path);
         }
 
         self.sync_daemon_session_store(cx);

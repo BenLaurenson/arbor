@@ -364,6 +364,8 @@ impl ArborWindow {
             || self.start_daemon_modal
             || self.connect_to_host_modal.is_some()
             || self.show_theme_picker
+            || self.repo_settings_modal.is_some()
+            || self.repo_icon_preview.is_some()
         {
             return;
         }
@@ -389,8 +391,15 @@ impl ArborWindow {
             return;
         }
 
-        let Some(CenterTab::Terminal(active_terminal_id)) = active_tab else {
-            return;
+        let active_terminal_id = match active_tab {
+            Some(CenterTab::Terminal(id)) => id,
+            Some(CenterTab::Hub) => {
+                let Some(id) = self.hub_active_terminal_id else {
+                    return;
+                };
+                id
+            },
+            _ => return,
         };
 
         if let Some(command) = terminal_keys::platform_command_for_keystroke(&event.keystroke) {

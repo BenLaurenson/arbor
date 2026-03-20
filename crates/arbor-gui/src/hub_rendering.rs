@@ -463,13 +463,17 @@ impl ArborWindow {
         cx.notify();
     }
 
-    /// Remove a terminal from the hub layout and collapse empty splits.
+    /// Remove a terminal from the hub layout, close the terminal session,
+    /// and collapse empty splits.
     pub(crate) fn hub_remove_terminal(&mut self, terminal_id: u64, cx: &mut Context<Self>) {
         self.hub_layout.remove_terminal(terminal_id);
+        // Also close the actual terminal session
+        self.close_terminal_session_by_id(terminal_id);
         if self.hub_active_terminal_id == Some(terminal_id) {
             self.hub_active_terminal_id = self.hub_layout.terminal_ids().first().copied();
         }
         self.sync_hub_layout_store(cx);
+        self.sync_daemon_session_store(cx);
         cx.notify();
     }
 
