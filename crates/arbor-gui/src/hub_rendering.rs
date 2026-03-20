@@ -2,7 +2,6 @@ use {super::*, gpui::relative};
 
 impl ArborWindow {
     /// Remove terminals from the hub layout that no longer exist in self.terminals.
-    #[allow(dead_code)]
     pub(crate) fn hub_prune_stale_terminals(&mut self) {
         let stale_ids: Vec<u64> = self
             .hub_layout
