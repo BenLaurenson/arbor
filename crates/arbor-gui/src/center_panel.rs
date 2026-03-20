@@ -55,6 +55,7 @@ impl ArborWindow {
         current_tabs.extend(
             terminals
                 .iter()
+                .filter(|session| !self.hub_layout.contains_terminal(session.id))
                 .map(|session| CenterTab::Terminal(session.id)),
         );
         current_tabs.extend(
