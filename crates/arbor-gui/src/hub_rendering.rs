@@ -269,13 +269,11 @@ impl ArborWindow {
                             .child(worktree_label),
                     ),
             )
-            // Terminal output — clipped to pane bounds, with tracked scroll handle
+            // Terminal output — uses canvas() to measure pane bounds for PTY resize
             .child({
-                let scroll_handle = self
-                    .hub_scroll_handles
-                    .get(&terminal_id)
-                    .cloned()
-                    .unwrap_or_default();
+                let entity = cx.entity().downgrade();
+                let cw = cell_width;
+                let lh = line_height;
 
                 div()
                     .flex_1()
@@ -283,40 +281,77 @@ impl ArborWindow {
                     .min_w_0()
                     .min_h_0()
                     .overflow_hidden()
-                    .font(mono_font.clone())
-                    .text_size(px(TERMINAL_FONT_SIZE_PX))
-                    .line_height(px(line_height))
-                    .px_2()
-                    .pt_1()
+                    // Invisible canvas to capture this pane's pixel bounds
+                    .child(
+                        canvas(
+                            move |bounds, _window, cx| {
+                                let width = (bounds.size.width.to_f64() as f32
+                                    - TERMINAL_SCROLLBAR_WIDTH_PX
+                                    - 16.0)
+                                    .max(1.0);
+                                let height =
+                                    (bounds.size.height.to_f64() as f32 - 8.0).max(1.0);
+                                if let Some((rows, cols)) =
+                                    terminal_grid_size_for_viewport(width, height, cw, lh)
+                                {
+                                    let pw =
+                                        width.floor().clamp(1., f32::from(u16::MAX)) as u16;
+                                    let ph =
+                                        height.floor().clamp(1., f32::from(u16::MAX)) as u16;
+                                    if let Some(entity) = entity.upgrade() {
+                                        entity.update(cx, |this: &mut ArborWindow, _cx| {
+                                            this.hub_pane_grid_sizes
+                                                .insert(terminal_id, (rows, cols, pw, ph));
+                                        });
+                                    }
+                                }
+                            },
+                            |_, _, _, _| {},
+                        )
+                        .size_full()
+                        .absolute()
+                        .inset_0(),
+                    )
+                    // Actual terminal content overlay
                     .child(
                         div()
-                            .id(ElementId::Name(
-                                format!("hub-terminal-scroll-{terminal_id}").into(),
-                            ))
-                            .size_full()
-                            .min_w_0()
-                            .min_h_0()
-                            .overflow_x_hidden()
-                            .overflow_y_scroll()
-                            .scrollbar_width(px(TERMINAL_SCROLLBAR_WIDTH_PX))
-                            .track_scroll(&scroll_handle)
+                            .absolute()
+                            .inset_0()
+                            .overflow_hidden()
+                            .font(mono_font.clone())
+                            .text_size(px(TERMINAL_FONT_SIZE_PX))
+                            .line_height(px(line_height))
+                            .px_2()
+                            .pt_1()
                             .child(
                                 div()
-                                    .w_full()
+                                    .id(ElementId::Name(
+                                        format!("hub-terminal-scroll-{terminal_id}").into(),
+                                    ))
+                                    .size_full()
                                     .min_w_0()
-                                    .flex_none()
-                                    .flex()
-                                    .flex_col()
-                                    .gap_0()
-                                    .children(styled_lines.into_iter().map(|line| {
-                                        render_terminal_line(
-                                            line,
-                                            theme,
-                                            cell_width,
-                                            line_height,
-                                            mono_font.clone(),
-                                        )
-                                    })),
+                                    .min_h_0()
+                                    .overflow_x_hidden()
+                                    .overflow_y_scroll()
+                                    .scrollbar_width(px(TERMINAL_SCROLLBAR_WIDTH_PX))
+                                    .child(
+                                        div()
+                                            .w_full()
+                                            .min_w_0()
+                                            .flex_none()
+                                            .flex()
+                                            .flex_col()
+                                            .gap_0()
+                                            .children(styled_lines.into_iter().map(|line| {
+                                                render_terminal_line(
+                                                    line,
+                                                    theme,
+                                                    cell_width,
+                                                    line_height,
+                                                    mono_font.clone(),
+                                                )
+                                            })),
+                                    ),
                             ),
                     )
             })
@@ -467,9 +502,6 @@ impl ArborWindow {
         }
         self.hub_layout.add_terminal(terminal_id);
         self.hub_active_terminal_id = Some(terminal_id);
-        self.hub_scroll_handles
-            .entry(terminal_id)
-            .or_default();
         self.sync_hub_layout_store(cx);
         cx.notify();
     }
@@ -481,7 +513,7 @@ impl ArborWindow {
         if let Some(session_id) = self.hub_terminal_to_session.remove(&terminal_id) {
             self.hub_connected_session_ids.remove(&session_id);
         }
-        self.hub_scroll_handles.remove(&terminal_id);
+        self.hub_pane_grid_sizes.remove(&terminal_id);
         self.hub_layout.remove_terminal(terminal_id);
         // Also close the actual terminal session
         self.close_terminal_session_by_id(terminal_id);

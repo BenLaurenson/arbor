@@ -291,9 +291,8 @@ impl ArborWindow {
             self.last_terminal_grid_size = Some((rows, cols));
         }
 
-        // For hub terminals, compute grid size from per-pane scroll handle bounds
+        // For hub terminals, use grid sizes captured during paint by canvas callbacks
         let hub_terminal_ids: Vec<u64> = self.hub_layout.terminal_ids();
-        let hub_scroll_handles = self.hub_scroll_handles.clone();
 
         let mut sessions_to_close = Vec::new();
         let mut pending_notifications = Vec::new();
@@ -310,11 +309,9 @@ impl ArborWindow {
 
             let session_id = self.terminals[index].id;
             let is_active = active_terminal_id == Some(session_id);
-            // Use per-pane scroll handle bounds for hub terminals
+            // Use per-pane grid sizes captured during paint by canvas callbacks
             let effective_grid_size = if hub_terminal_ids.contains(&session_id) {
-                hub_scroll_handles
-                    .get(&session_id)
-                    .and_then(|sh| terminal_grid_size_from_scroll_handle(sh, cx))
+                self.hub_pane_grid_sizes.get(&session_id).copied()
             } else {
                 target_grid_size
             };
