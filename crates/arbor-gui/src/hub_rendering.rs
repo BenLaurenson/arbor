@@ -269,7 +269,7 @@ impl ArborWindow {
                             .child(worktree_label),
                     ),
             )
-            // Terminal output
+            // Terminal output — clipped to pane bounds
             .child(
                 div()
                     .flex_1()
@@ -282,16 +282,12 @@ impl ArborWindow {
                     .line_height(px(line_height))
                     .px_2()
                     .pt_1()
-                    .flex()
-                    .flex_col()
-                    .gap_0()
                     .child(
                         div()
                             .id(ElementId::Name(
                                 format!("hub-terminal-scroll-{terminal_id}").into(),
                             ))
-                            .flex_1()
-                            .w_full()
+                            .size_full()
                             .min_w_0()
                             .min_h_0()
                             .overflow_x_hidden()

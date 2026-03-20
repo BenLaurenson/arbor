@@ -291,9 +291,24 @@ impl ArborWindow {
             self.last_terminal_grid_size = Some((rows, cols));
         }
 
-        // For hub terminals, compute grid size based on actual split ratios
+        // For hub terminals, compute grid size based on actual split ratios.
+        // Use the center pane dimensions (total width minus left/right panes)
+        // as the base, then multiply by each terminal's split fraction.
         let hub_terminal_ids: Vec<u64> = self.hub_layout.terminal_ids();
         let hub_layout_snapshot = self.hub_layout.clone();
+        let hub_base_grid_size = if !hub_terminal_ids.is_empty() {
+            let cell_width = terminal_cell_width_px(cx);
+            let line_height_val = terminal_line_height_px(cx);
+            // Estimate center pane from left/right pane widths
+            // The scroll handle may be stale, so use last known grid or a reasonable estimate
+            let base_cols = self.last_terminal_grid_size.map(|(_, c)| c).unwrap_or(120);
+            let base_rows = self.last_terminal_grid_size.map(|(r, _)| r).unwrap_or(40);
+            let base_pw = (f32::from(base_cols) * cell_width) as u16;
+            let base_ph = (f32::from(base_rows) * line_height_val) as u16;
+            Some((base_rows, base_cols, base_pw, base_ph))
+        } else {
+            None
+        };
 
         let mut sessions_to_close = Vec::new();
         let mut pending_notifications = Vec::new();
@@ -312,7 +327,7 @@ impl ArborWindow {
             let is_active = active_terminal_id == Some(session_id);
             // Use per-pane grid size for hub terminals based on split ratios
             let effective_grid_size = if hub_terminal_ids.contains(&session_id) {
-                target_grid_size.map(|(rows, cols, pw, ph)| {
+                hub_base_grid_size.map(|(rows, cols, pw, ph)| {
                     let w_frac = hub_layout_snapshot
                         .width_fraction_for_terminal(session_id)
                         .max(0.1);
