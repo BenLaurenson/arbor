@@ -291,18 +291,9 @@ impl ArborWindow {
             self.last_terminal_grid_size = Some((rows, cols));
         }
 
-        // For hub terminals, compute approximate grid size based on pane count
+        // For hub terminals, compute grid size based on actual split ratios
         let hub_terminal_ids: Vec<u64> = self.hub_layout.terminal_ids();
-        let hub_grid_size = if !hub_terminal_ids.is_empty() {
-            target_grid_size.map(|(rows, cols, pw, ph)| {
-                let pane_count = hub_terminal_ids.len().max(1) as u16;
-                // Rough approximation: divide cols by horizontal pane count
-                let hub_cols = (cols / pane_count).max(20);
-                (rows, hub_cols, pw / pane_count, ph)
-            })
-        } else {
-            None
-        };
+        let hub_layout_snapshot = self.hub_layout.clone();
 
         let mut sessions_to_close = Vec::new();
         let mut pending_notifications = Vec::new();
@@ -319,9 +310,21 @@ impl ArborWindow {
 
             let session_id = self.terminals[index].id;
             let is_active = active_terminal_id == Some(session_id);
-            // Use hub grid size for terminals in the hub, standard size otherwise
+            // Use per-pane grid size for hub terminals based on split ratios
             let effective_grid_size = if hub_terminal_ids.contains(&session_id) {
-                hub_grid_size
+                target_grid_size.map(|(rows, cols, pw, ph)| {
+                    let w_frac = hub_layout_snapshot
+                        .width_fraction_for_terminal(session_id)
+                        .max(0.1);
+                    let h_frac = hub_layout_snapshot
+                        .height_fraction_for_terminal(session_id)
+                        .max(0.1);
+                    let hub_cols = ((cols as f32) * w_frac).floor().max(20.0) as u16;
+                    let hub_rows = ((rows as f32) * h_frac).floor().max(5.0) as u16;
+                    let hub_pw = ((pw as f32) * w_frac) as u16;
+                    let hub_ph = ((ph as f32) * h_frac) as u16;
+                    (hub_rows, hub_cols, hub_pw, hub_ph)
+                })
             } else {
                 target_grid_size
             };

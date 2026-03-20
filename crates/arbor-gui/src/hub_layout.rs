@@ -135,6 +135,72 @@ impl HubPane {
         }
     }
 
+    /// Returns the fraction of the total width that a terminal occupies,
+    /// accounting for nested split ratios. Returns 1.0 if the terminal
+    /// is the root node, or the product of ratios along the path.
+    pub(crate) fn width_fraction_for_terminal(&self, terminal_id: u64) -> f32 {
+        match self {
+            Self::Terminal(id) if *id == terminal_id => 1.0,
+            Self::Split {
+                direction,
+                ratio,
+                first,
+                second,
+            } => {
+                if first.contains_terminal(terminal_id) {
+                    let child_fraction = first.width_fraction_for_terminal(terminal_id);
+                    if *direction == SplitDirection::Horizontal {
+                        child_fraction * ratio
+                    } else {
+                        child_fraction
+                    }
+                } else if second.contains_terminal(terminal_id) {
+                    let child_fraction = second.width_fraction_for_terminal(terminal_id);
+                    if *direction == SplitDirection::Horizontal {
+                        child_fraction * (1.0 - ratio)
+                    } else {
+                        child_fraction
+                    }
+                } else {
+                    0.0
+                }
+            },
+            _ => 0.0,
+        }
+    }
+
+    /// Returns the fraction of the total height that a terminal occupies.
+    pub(crate) fn height_fraction_for_terminal(&self, terminal_id: u64) -> f32 {
+        match self {
+            Self::Terminal(id) if *id == terminal_id => 1.0,
+            Self::Split {
+                direction,
+                ratio,
+                first,
+                second,
+            } => {
+                if first.contains_terminal(terminal_id) {
+                    let child_fraction = first.height_fraction_for_terminal(terminal_id);
+                    if *direction == SplitDirection::Vertical {
+                        child_fraction * ratio
+                    } else {
+                        child_fraction
+                    }
+                } else if second.contains_terminal(terminal_id) {
+                    let child_fraction = second.height_fraction_for_terminal(terminal_id);
+                    if *direction == SplitDirection::Vertical {
+                        child_fraction * (1.0 - ratio)
+                    } else {
+                        child_fraction
+                    }
+                } else {
+                    0.0
+                }
+            },
+            _ => 0.0,
+        }
+    }
+
     /// Split the pane containing `target_id`, placing an `Empty` pane
     /// in the position indicated by `zone`. Unlike `split_at`, this does
     /// not require a new terminal ID — the empty slot can be filled later.
@@ -508,5 +574,68 @@ mod tests {
         let json = serde_json::to_string(&pane).unwrap();
         let deserialized: HubPane = serde_json::from_str(&json).unwrap();
         assert_eq!(pane, deserialized);
+    }
+
+    #[test]
+    fn width_fraction_for_single_terminal() {
+        let pane = HubPane::Terminal(1);
+        assert!((pane.width_fraction_for_terminal(1) - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn width_fraction_for_horizontal_split() {
+        let pane = HubPane::Split {
+            direction: SplitDirection::Horizontal,
+            ratio: 0.5,
+            first: Box::new(HubPane::Terminal(1)),
+            second: Box::new(HubPane::Terminal(2)),
+        };
+        assert!((pane.width_fraction_for_terminal(1) - 0.5).abs() < f32::EPSILON);
+        assert!((pane.width_fraction_for_terminal(2) - 0.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn width_fraction_for_vertical_split_is_full() {
+        let pane = HubPane::Split {
+            direction: SplitDirection::Vertical,
+            ratio: 0.5,
+            first: Box::new(HubPane::Terminal(1)),
+            second: Box::new(HubPane::Terminal(2)),
+        };
+        // Vertical splits don't reduce width
+        assert!((pane.width_fraction_for_terminal(1) - 1.0).abs() < f32::EPSILON);
+        assert!((pane.width_fraction_for_terminal(2) - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn width_fraction_for_nested_splits() {
+        // Split(H, 0.5, Split(H, 0.5, T(1), T(2)), T(3))
+        // T(1) gets 0.5 * 0.5 = 0.25 of total width
+        let pane = HubPane::Split {
+            direction: SplitDirection::Horizontal,
+            ratio: 0.5,
+            first: Box::new(HubPane::Split {
+                direction: SplitDirection::Horizontal,
+                ratio: 0.5,
+                first: Box::new(HubPane::Terminal(1)),
+                second: Box::new(HubPane::Terminal(2)),
+            }),
+            second: Box::new(HubPane::Terminal(3)),
+        };
+        assert!((pane.width_fraction_for_terminal(1) - 0.25).abs() < f32::EPSILON);
+        assert!((pane.width_fraction_for_terminal(2) - 0.25).abs() < f32::EPSILON);
+        assert!((pane.width_fraction_for_terminal(3) - 0.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn height_fraction_for_vertical_split() {
+        let pane = HubPane::Split {
+            direction: SplitDirection::Vertical,
+            ratio: 0.3,
+            first: Box::new(HubPane::Terminal(1)),
+            second: Box::new(HubPane::Terminal(2)),
+        };
+        assert!((pane.height_fraction_for_terminal(1) - 0.3).abs() < f32::EPSILON);
+        assert!((pane.height_fraction_for_terminal(2) - 0.7).abs() < f32::EPSILON);
     }
 }
