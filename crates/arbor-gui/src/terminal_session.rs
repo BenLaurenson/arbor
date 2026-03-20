@@ -290,6 +290,20 @@ impl ArborWindow {
         if let Some((rows, cols, ..)) = target_grid_size {
             self.last_terminal_grid_size = Some((rows, cols));
         }
+
+        // For hub terminals, compute approximate grid size based on pane count
+        let hub_terminal_ids: Vec<u64> = self.hub_layout.terminal_ids();
+        let hub_grid_size = if !hub_terminal_ids.is_empty() {
+            target_grid_size.map(|(rows, cols, pw, ph)| {
+                let pane_count = hub_terminal_ids.len().max(1) as u16;
+                // Rough approximation: divide cols by horizontal pane count
+                let hub_cols = (cols / pane_count).max(20);
+                (rows, hub_cols, pw / pane_count, ph)
+            })
+        } else {
+            None
+        };
+
         let mut sessions_to_close = Vec::new();
         let mut pending_notifications = Vec::new();
         let sync_indices = ordered_terminal_sync_indices(&self.terminals, active_terminal_id);
@@ -305,12 +319,18 @@ impl ArborWindow {
 
             let session_id = self.terminals[index].id;
             let is_active = active_terminal_id == Some(session_id);
-            if !runtime.should_sync(&self.terminals[index], is_active, target_grid_size, now) {
+            // Use hub grid size for terminals in the hub, standard size otherwise
+            let effective_grid_size = if hub_terminal_ids.contains(&session_id) {
+                hub_grid_size
+            } else {
+                target_grid_size
+            };
+            if !runtime.should_sync(&self.terminals[index], is_active, effective_grid_size, now) {
                 continue;
             }
             let outcome = {
                 let session = &mut self.terminals[index];
-                runtime.sync(session, is_active, target_grid_size)
+                runtime.sync(session, is_active, effective_grid_size)
             };
             self.terminals[index].last_runtime_sync_at = Some(now);
 

@@ -402,6 +402,31 @@ impl ArborWindow {
             _ => return,
         };
 
+        // Cmd+= (zoom in), Cmd+- (zoom out), Cmd+0 (reset zoom)
+        if event.keystroke.modifiers.platform {
+            match event.keystroke.key.as_str() {
+                "=" | "+" => {
+                    self.terminal_font_scale = (self.terminal_font_scale + 0.1).min(3.0);
+                    cx.stop_propagation();
+                    cx.notify();
+                    return;
+                },
+                "-" => {
+                    self.terminal_font_scale = (self.terminal_font_scale - 0.1).max(0.5);
+                    cx.stop_propagation();
+                    cx.notify();
+                    return;
+                },
+                "0" => {
+                    self.terminal_font_scale = 1.0;
+                    cx.stop_propagation();
+                    cx.notify();
+                    return;
+                },
+                _ => {},
+            }
+        }
+
         if let Some(command) = terminal_keys::platform_command_for_keystroke(&event.keystroke) {
             match command {
                 terminal_keys::TerminalPlatformCommand::Copy => {
