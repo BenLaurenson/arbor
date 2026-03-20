@@ -43,7 +43,10 @@ impl ArborWindow {
             self.estimated_diff_wrap_columns_for_window_width(window_width, cell_width)
         };
         self.rewrap_diff_sessions_if_needed(wrap_columns);
-        self.hub_prune_stale_terminals();
+        // Prune stale hub terminals only when the hub has entries
+        if self.hub_layout.terminal_count() > 0 {
+            self.hub_prune_stale_terminals();
+        }
 
         let theme = self.theme();
         let terminals = self.selected_worktree_terminals();

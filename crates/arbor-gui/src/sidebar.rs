@@ -1335,15 +1335,32 @@ impl ArborWindow {
         let mut container = div().flex().flex_col().child(row_element);
 
         if !compact_sidebar && !sessions.is_empty() {
+            // A session is considered "active" if the file was recently modified
+            // OR if a terminal with a matching resume command is running in the Hub
+            let hub_terminal_commands: Vec<String> = self
+                .hub_layout
+                .terminal_ids()
+                .iter()
+                .filter_map(|tid| {
+                    self.terminals
+                        .iter()
+                        .find(|t| t.id == *tid)
+                        .and_then(|t| t.last_command.clone())
+                })
+                .collect();
+            let is_session_active = |s: &arbor_core::session::AgentSessionSummary| {
+                s.is_active || hub_terminal_commands.iter().any(|cmd| cmd.contains(&s.id))
+            };
+
             let active_sessions: Vec<_> = sessions
                 .iter()
                 .enumerate()
-                .filter(|(_, s)| s.is_active)
+                .filter(|(_, s)| is_session_active(s))
                 .collect();
             let inactive_sessions: Vec<_> = sessions
                 .iter()
                 .enumerate()
-                .filter(|(_, s)| !s.is_active)
+                .filter(|(_, s)| !is_session_active(s))
                 .collect();
 
             let mut cards = div().flex().flex_col().pl(px(20.)).gap(px(2.));
@@ -1429,7 +1446,14 @@ impl ArborWindow {
     ) -> Stateful<Div> {
         let theme = self.theme();
         let display_name = arbor_core::session::session_display_name(session);
-        let dot_color = if session.is_active {
+        let is_hub_connected = self.hub_layout.terminal_ids().iter().any(|tid| {
+            self.terminals
+                .iter()
+                .find(|t| t.id == *tid)
+                .and_then(|t| t.last_command.as_ref())
+                .is_some_and(|cmd| cmd.contains(&session.id))
+        });
+        let dot_color = if session.is_active || is_hub_connected {
             0x72d69c_u32 // green
         } else {
             0xeb6f92_u32 // red
