@@ -1774,22 +1774,15 @@ impl ArborWindow {
         cx: &mut Context<Self>,
     ) {
         // If this session is already connected to a hub terminal, just focus it
-        if self.hub_connected_session_ids.contains(session_id) {
-            // Find the terminal with this session's resume command
-            if let Some(tid) = self
-                .terminals
+        if self.hub_connected_session_ids.contains(session_id)
+            && let Some((&tid, _)) = self
+                .hub_terminal_to_session
                 .iter()
-                .find(|t| {
-                    t.last_command
-                        .as_ref()
-                        .is_some_and(|cmd| cmd.contains(session_id))
-                })
-                .map(|t| t.id)
-            {
-                self.hub_tab_active = true;
-                self.hub_focus_terminal(tid, window, cx);
-                return;
-            }
+                .find(|(_, sid)| sid.as_str() == session_id)
+        {
+            self.hub_tab_active = true;
+            self.hub_focus_terminal(tid, window, cx);
+            return;
         }
 
         // Set hub active BEFORE select_worktree so ensure_selected_worktree_terminal
@@ -1829,6 +1822,8 @@ impl ArborWindow {
 
         // Track this Claude session as connected to the Hub
         self.hub_connected_session_ids.insert(session_id.to_owned());
+        self.hub_terminal_to_session
+            .insert(terminal_id, session_id.to_owned());
 
         // Add terminal to the Hub layout
         self.hub_add_terminal(terminal_id, cx);
