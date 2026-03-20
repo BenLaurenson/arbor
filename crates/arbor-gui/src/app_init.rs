@@ -336,6 +336,7 @@ impl ArborWindow {
                     center_tab_order: Vec::new(),
                     hub_layout: startup_hub_layout,
                     hub_active_terminal_id: None,
+                    hub_scroll_handles: HashMap::new(),
                     hub_connected_session_ids: HashSet::new(),
                     hub_terminal_to_session: HashMap::new(),
                     new_tab_menu_position: None,
@@ -766,6 +767,7 @@ impl ArborWindow {
                 .clone()
                 .unwrap_or(hub_layout::HubPane::Empty),
             hub_active_terminal_id: None,
+            hub_scroll_handles: HashMap::new(),
             hub_connected_session_ids: HashSet::new(),
             hub_terminal_to_session: HashMap::new(),
             new_tab_menu_position: None,

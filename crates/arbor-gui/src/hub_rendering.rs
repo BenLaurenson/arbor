@@ -269,8 +269,14 @@ impl ArborWindow {
                             .child(worktree_label),
                     ),
             )
-            // Terminal output — clipped to pane bounds
-            .child(
+            // Terminal output — clipped to pane bounds, with tracked scroll handle
+            .child({
+                let scroll_handle = self
+                    .hub_scroll_handles
+                    .get(&terminal_id)
+                    .cloned()
+                    .unwrap_or_default();
+
                 div()
                     .flex_1()
                     .w_full()
@@ -293,6 +299,7 @@ impl ArborWindow {
                             .overflow_x_hidden()
                             .overflow_y_scroll()
                             .scrollbar_width(px(TERMINAL_SCROLLBAR_WIDTH_PX))
+                            .track_scroll(&scroll_handle)
                             .child(
                                 div()
                                     .w_full()
@@ -311,8 +318,8 @@ impl ArborWindow {
                                         )
                                     })),
                             ),
-                    ),
-            )
+                    )
+            })
     }
 
     /// Render a draggable divider between hub split panes.
@@ -460,6 +467,9 @@ impl ArborWindow {
         }
         self.hub_layout.add_terminal(terminal_id);
         self.hub_active_terminal_id = Some(terminal_id);
+        self.hub_scroll_handles
+            .entry(terminal_id)
+            .or_default();
         self.sync_hub_layout_store(cx);
         cx.notify();
     }
@@ -471,6 +481,7 @@ impl ArborWindow {
         if let Some(session_id) = self.hub_terminal_to_session.remove(&terminal_id) {
             self.hub_connected_session_ids.remove(&session_id);
         }
+        self.hub_scroll_handles.remove(&terminal_id);
         self.hub_layout.remove_terminal(terminal_id);
         // Also close the actual terminal session
         self.close_terminal_session_by_id(terminal_id);
