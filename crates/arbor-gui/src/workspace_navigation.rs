@@ -1773,6 +1773,25 @@ impl ArborWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // If this session is already connected to a hub terminal, just focus it
+        if self.hub_connected_session_ids.contains(session_id) {
+            // Find the terminal with this session's resume command
+            if let Some(tid) = self
+                .terminals
+                .iter()
+                .find(|t| {
+                    t.last_command
+                        .as_ref()
+                        .is_some_and(|cmd| cmd.contains(session_id))
+                })
+                .map(|t| t.id)
+            {
+                self.hub_tab_active = true;
+                self.hub_focus_terminal(tid, window, cx);
+                return;
+            }
+        }
+
         // Set hub active BEFORE select_worktree so ensure_selected_worktree_terminal
         // skips standalone tab registration
         self.hub_tab_active = true;
