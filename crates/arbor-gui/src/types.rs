@@ -2177,7 +2177,6 @@ impl Render for DraggedHubPane {
 
 /// Which drop zone the cursor is currently over in a hub pane.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[allow(dead_code)]
 pub(crate) enum HubDropZone {
     Center,
     Left,
@@ -2187,7 +2186,6 @@ pub(crate) enum HubDropZone {
 }
 
 /// Active drop target state during a hub drag operation.
-#[allow(dead_code)]
 pub(crate) struct HubDropTarget {
     pub(crate) terminal_id: u64,
     pub(crate) zone: HubDropZone,
@@ -2460,7 +2458,8 @@ pub(crate) struct ArborWindow {
     pub(crate) hub_active_terminal_id: Option<u64>,
     /// Per-hub-terminal grid sizes captured during paint via canvas bounds.
     pub(crate) hub_pane_grid_sizes: HashMap<u64, (u16, u16, u16, u16)>,
-    #[allow(dead_code)]
+    /// Pixel bounds of each hub pane, captured during paint for drop zone detection.
+    pub(crate) hub_pane_bounds: HashMap<u64, Bounds<Pixels>>,
     pub(crate) hub_drop_target: Option<HubDropTarget>,
     /// Claude session IDs that are connected to hub terminals (for sidebar active state).
     pub(crate) hub_connected_session_ids: HashSet<String>,

@@ -1,5 +1,46 @@
 use {super::*, gpui::relative};
 
+/// Compute which drop zone the mouse is over within a pane's bounds.
+/// Uses 25% edge threshold (Zed's default): outer 25% of each edge
+/// triggers a directional split, center 50% triggers a swap/merge.
+fn compute_drop_zone(mouse: gpui::Point<Pixels>, bounds: Bounds<Pixels>) -> HubDropZone {
+    let x = mouse.x - bounds.origin.x;
+    let y = mouse.y - bounds.origin.y;
+    let w = bounds.size.width;
+    let h = bounds.size.height;
+
+    if w <= px(0.) || h <= px(0.) {
+        return HubDropZone::Center;
+    }
+
+    let edge_threshold = 0.25;
+    let edge_w = w * edge_threshold;
+    let edge_h = h * edge_threshold;
+
+    // Check if in center zone (not near any edge)
+    if x > edge_w && x < w - edge_w && y > edge_h && y < h - edge_h {
+        return HubDropZone::Center;
+    }
+
+    // Determine closest edge — use normalized distances
+    let dist_left = x / w;
+    let dist_right = (w - x) / w;
+    let dist_top = y / h;
+    let dist_bottom = (h - y) / h;
+
+    let min = dist_left.min(dist_right).min(dist_top).min(dist_bottom);
+
+    if min == dist_left {
+        HubDropZone::Left
+    } else if min == dist_right {
+        HubDropZone::Right
+    } else if min == dist_top {
+        HubDropZone::Top
+    } else {
+        HubDropZone::Bottom
+    }
+}
+
 impl ArborWindow {
     /// Remove terminals from the hub layout that no longer exist in self.terminals.
     pub(crate) fn hub_prune_stale_terminals(&mut self) {
@@ -243,14 +284,73 @@ impl ArborWindow {
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.hub_focus_terminal(tid, window, cx);
             }))
-            // Drop target: accept DraggedHubPane payloads
+            // Drop target: accept DraggedHubPane payloads with zone detection
             .on_drop(cx.listener(move |this, dragged: &DraggedHubPane, _, cx| {
                 this.hub_handle_drop(terminal_id, dragged, cx);
             }))
-            .drag_over::<DraggedHubPane>({
-                let accent = theme.accent;
-                move |style, _, _, _| style.border_color(rgb(accent)).border_2()
-            })
+            .on_drag_move(cx.listener(
+                move |this, event: &DragMoveEvent<DraggedHubPane>, _, cx| {
+                    let drag = event.drag(cx);
+                    if drag.terminal_id == terminal_id {
+                        if this.hub_drop_target.is_some() {
+                            this.hub_drop_target = None;
+                            cx.notify();
+                        }
+                        return;
+                    }
+                    let mouse = event.event.position;
+                    let zone = if let Some(bounds) = this.hub_pane_bounds.get(&terminal_id) {
+                        compute_drop_zone(mouse, *bounds)
+                    } else {
+                        HubDropZone::Center
+                    };
+                    let changed = this
+                        .hub_drop_target
+                        .as_ref()
+                        .map(|t| (t.terminal_id, t.zone))
+                        != Some((terminal_id, zone));
+                    if changed {
+                        this.hub_drop_target = Some(HubDropTarget {
+                            terminal_id,
+                            zone,
+                        });
+                        cx.notify();
+                    }
+                },
+            ))
+            // Drop zone overlay
+            .when_some(
+                self.hub_drop_target
+                    .as_ref()
+                    .filter(|dt| dt.terminal_id == terminal_id)
+                    .map(|dt| dt.zone),
+                |this, zone| {
+                    this.child(
+                        div()
+                            .absolute()
+                            .top(relative(match zone {
+                                HubDropZone::Bottom => 0.5,
+                                _ => 0.0,
+                            }))
+                            .left(relative(match zone {
+                                HubDropZone::Right => 0.5,
+                                _ => 0.0,
+                            }))
+                            .w(relative(match zone {
+                                HubDropZone::Left | HubDropZone::Right => 0.5,
+                                _ => 1.0,
+                            }))
+                            .h(relative(match zone {
+                                HubDropZone::Top | HubDropZone::Bottom => 0.5,
+                                _ => 1.0,
+                            }))
+                            .bg(gpui::rgba(0x61afef33))
+                            .border_2()
+                            .border_color(gpui::rgba(0x61afef99))
+                            .rounded_sm(),
+                    )
+                },
+            )
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |this, event: &MouseDownEvent, _, cx| {
@@ -355,6 +455,8 @@ impl ArborWindow {
                                                     terminal_id,
                                                     (rows, cols, pw, ph),
                                                 );
+                                                this.hub_pane_bounds
+                                                    .insert(terminal_id, bounds);
                                             },
                                         );
                                     }
@@ -571,6 +673,7 @@ impl ArborWindow {
             self.hub_connected_session_ids.remove(&session_id);
         }
         self.hub_pane_grid_sizes.remove(&terminal_id);
+        self.hub_pane_bounds.remove(&terminal_id);
         self.hub_layout.remove_terminal(terminal_id);
         // Also close the actual terminal session
         self.close_terminal_session_by_id(terminal_id);
@@ -712,7 +815,7 @@ impl ArborWindow {
     }
 
     /// Handle a drop of a DraggedHubPane onto a target pane.
-    /// Swaps the two terminals' positions in the layout tree.
+    /// Uses the detected drop zone to determine split direction.
     fn hub_handle_drop(
         &mut self,
         target_id: u64,
@@ -721,13 +824,33 @@ impl ArborWindow {
     ) {
         let source_id = dragged.terminal_id;
         if source_id == target_id {
+            self.hub_drop_target = None;
+            cx.notify();
             return;
         }
 
-        // Swap: remove source from its position, split target with source
+        // Get the zone from the stored drop target
+        let zone = self
+            .hub_drop_target
+            .take()
+            .map(|dt| match dt.zone {
+                HubDropZone::Left => hub_layout::DropZone::Left,
+                HubDropZone::Right => hub_layout::DropZone::Right,
+                HubDropZone::Top => hub_layout::DropZone::Top,
+                HubDropZone::Bottom => hub_layout::DropZone::Bottom,
+                HubDropZone::Center => hub_layout::DropZone::Center,
+            })
+            .unwrap_or(hub_layout::DropZone::Right);
+
+        // Remove source from its position, then split target with source
         self.hub_layout.remove_terminal(source_id);
-        self.hub_layout
-            .split_at(target_id, source_id, hub_layout::DropZone::Right);
+        if zone == hub_layout::DropZone::Center {
+            // Center = swap: replace target with source
+            self.hub_layout
+                .split_at(target_id, source_id, hub_layout::DropZone::Center);
+        } else {
+            self.hub_layout.split_at(target_id, source_id, zone);
+        }
         self.hub_active_terminal_id = Some(source_id);
         self.sync_hub_layout_store(cx);
         cx.notify();
