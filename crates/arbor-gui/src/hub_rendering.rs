@@ -114,20 +114,38 @@ impl ArborWindow {
             hub = hub.child(grid);
         }
 
-        // Page indicator dots
+        // Page navigation bar: ◀ ● ○ ○ ▶  Page 1/3
         if page_count > 1 {
-            let mut dots = div()
+            let mut page_bar = div()
                 .flex_none()
-                .h(px(20.))
+                .h(px(24.))
                 .w_full()
+                .px_2()
                 .flex()
                 .items_center()
                 .justify_center()
-                .gap(px(6.));
+                .gap(px(8.))
+                .bg(rgb(theme.panel_bg));
 
+            // Previous page button
+            page_bar = page_bar.child(
+                div()
+                    .id("hub-page-prev")
+                    .cursor_pointer()
+                    .text_xs()
+                    .text_color(rgb(theme.text_muted))
+                    .hover(|this| this.text_color(rgb(theme.text_primary)))
+                    .child("\u{25c0}") // ◀
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.hub_grid.prev_page();
+                        cx.notify();
+                    })),
+            );
+
+            // Page dots
             for page in 0..page_count {
                 let is_current = page == current_page;
-                dots = dots.child(
+                page_bar = page_bar.child(
                     div()
                         .id(ElementId::Name(format!("hub-page-dot-{page}").into()))
                         .cursor_pointer()
@@ -154,7 +172,30 @@ impl ArborWindow {
                 );
             }
 
-            hub = hub.child(dots);
+            // Next page button
+            page_bar = page_bar.child(
+                div()
+                    .id("hub-page-next")
+                    .cursor_pointer()
+                    .text_xs()
+                    .text_color(rgb(theme.text_muted))
+                    .hover(|this| this.text_color(rgb(theme.text_primary)))
+                    .child("\u{25b6}") // ▶
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.hub_grid.next_page();
+                        cx.notify();
+                    })),
+            );
+
+            // Page count label
+            page_bar = page_bar.child(
+                div()
+                    .text_xs()
+                    .text_color(rgb(theme.text_disabled))
+                    .child(format!("{}/{}", current_page + 1, page_count)),
+            );
+
+            hub = hub.child(page_bar);
         }
 
         hub
@@ -503,7 +544,25 @@ impl ArborWindow {
                             .text_xs()
                             .text_color(rgb(theme.text_disabled))
                             .child(worktree_label),
-                    ),
+                    )
+                    // Close pane button on header
+                    .child({
+                        let close_tid = terminal_id;
+                        div()
+                            .id(ElementId::Name(
+                                format!("hub-pane-close-{terminal_id}").into(),
+                            ))
+                            .cursor_pointer()
+                            .flex_none()
+                            .text_xs()
+                            .text_color(rgb(theme.text_disabled))
+                            .hover(|this| this.text_color(rgb(0xeb6f92)))
+                            .child("\u{00d7}") // ×
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.hub_remove_terminal(close_tid, cx);
+                                cx.stop_propagation();
+                            }))
+                    }),
             )
             // Terminal output with canvas bounds measurement for PTY resize
             .child({
