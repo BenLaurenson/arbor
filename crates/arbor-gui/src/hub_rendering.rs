@@ -239,9 +239,18 @@ impl ArborWindow {
             .border_color(rgb(border_color))
             .rounded_sm()
             .cursor_pointer()
+            .relative()
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.hub_focus_terminal(tid, window, cx);
             }))
+            // Drop target: accept DraggedHubPane payloads
+            .on_drop(cx.listener(move |this, dragged: &DraggedHubPane, _, cx| {
+                this.hub_handle_drop(terminal_id, dragged, cx);
+            }))
+            .drag_over::<DraggedHubPane>({
+                let accent = theme.accent;
+                move |style, _, _, _| style.border_color(rgb(accent)).border_2()
+            })
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |this, event: &MouseDownEvent, _, cx| {
@@ -253,9 +262,12 @@ impl ArborWindow {
                     cx.notify();
                 }),
             )
-            // Pane header bar
+            // Pane header bar — draggable for rearranging
             .child(
                 div()
+                    .id(ElementId::Name(
+                        format!("hub-pane-header-{terminal_id}").into(),
+                    ))
                     .w_full()
                     .flex_none()
                     .h(px(24.))
@@ -263,6 +275,14 @@ impl ArborWindow {
                     .flex()
                     .items_center()
                     .gap(px(6.))
+                    .cursor_grab()
+                    .on_drag(
+                        DraggedHubPane { terminal_id },
+                        |dragged, _, _, cx| {
+                            cx.stop_propagation();
+                            cx.new(|_| dragged.clone())
+                        },
+                    )
                     .bg(rgb(if is_focused {
                         theme.panel_active_bg
                     } else {
@@ -687,6 +707,28 @@ impl ArborWindow {
         cx: &mut Context<Self>,
     ) {
         self.hub_layout.split_with_empty(terminal_id, zone);
+        self.sync_hub_layout_store(cx);
+        cx.notify();
+    }
+
+    /// Handle a drop of a DraggedHubPane onto a target pane.
+    /// Swaps the two terminals' positions in the layout tree.
+    fn hub_handle_drop(
+        &mut self,
+        target_id: u64,
+        dragged: &DraggedHubPane,
+        cx: &mut Context<Self>,
+    ) {
+        let source_id = dragged.terminal_id;
+        if source_id == target_id {
+            return;
+        }
+
+        // Swap: remove source from its position, split target with source
+        self.hub_layout.remove_terminal(source_id);
+        self.hub_layout
+            .split_at(target_id, source_id, hub_layout::DropZone::Right);
+        self.hub_active_terminal_id = Some(source_id);
         self.sync_hub_layout_store(cx);
         cx.notify();
     }

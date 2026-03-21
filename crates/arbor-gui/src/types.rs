@@ -2163,6 +2163,36 @@ pub(crate) struct HubPaneContextMenu {
     pub(crate) position: gpui::Point<Pixels>,
 }
 
+/// Drag payload when dragging a terminal pane within the Hub.
+#[derive(Clone)]
+pub(crate) struct DraggedHubPane {
+    pub(crate) terminal_id: u64,
+}
+
+impl Render for DraggedHubPane {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        gpui::Empty
+    }
+}
+
+/// Which drop zone the cursor is currently over in a hub pane.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(crate) enum HubDropZone {
+    Center,
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+/// Active drop target state during a hub drag operation.
+#[allow(dead_code)]
+pub(crate) struct HubDropTarget {
+    pub(crate) terminal_id: u64,
+    pub(crate) zone: HubDropZone,
+}
+
 pub(crate) struct RepoSettingsModal {
     pub(crate) repository_index: usize,
     pub(crate) group_key: String,
@@ -2430,6 +2460,8 @@ pub(crate) struct ArborWindow {
     pub(crate) hub_active_terminal_id: Option<u64>,
     /// Per-hub-terminal grid sizes captured during paint via canvas bounds.
     pub(crate) hub_pane_grid_sizes: HashMap<u64, (u16, u16, u16, u16)>,
+    #[allow(dead_code)]
+    pub(crate) hub_drop_target: Option<HubDropTarget>,
     /// Claude session IDs that are connected to hub terminals (for sidebar active state).
     pub(crate) hub_connected_session_ids: HashSet<String>,
     /// Maps hub terminal IDs to Claude session IDs for cleanup on close.
