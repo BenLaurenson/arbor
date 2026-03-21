@@ -782,10 +782,12 @@ impl ArborWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.hub_active_terminal_id == Some(terminal_id) {
-            return;
-        }
         self.hub_active_terminal_id = Some(terminal_id);
+
+        // Navigate to the page containing this terminal
+        if let Some(page) = self.hub_grid.page_for_terminal(terminal_id) {
+            self.hub_grid.current_page = page;
+        }
 
         // Sync worktree context to match the focused terminal
         if let Some(session) = self.terminals.iter().find(|t| t.id == terminal_id) {
