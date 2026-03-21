@@ -2458,6 +2458,8 @@ pub(crate) struct ArborWindow {
     pub(crate) hub_layout: hub_layout::HubPane,
     pub(crate) hub_grid: hub_grid::HubGrid,
     pub(crate) hub_active_terminal_id: Option<u64>,
+    /// When set, this terminal fills the entire hub view (single-pane mode).
+    pub(crate) hub_maximized_terminal: Option<u64>,
     /// Per-hub-terminal grid sizes captured during paint via canvas bounds.
     pub(crate) hub_pane_grid_sizes: HashMap<u64, (u16, u16, u16, u16)>,
     /// Pixel bounds of each hub pane, captured during paint for drop zone detection.

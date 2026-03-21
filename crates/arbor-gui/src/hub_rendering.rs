@@ -60,6 +60,28 @@ impl ArborWindow {
     /// Render the hub view as an equal-sized grid with pagination.
     pub(crate) fn render_hub_view(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let theme = self.theme();
+
+        // Maximized mode: single terminal fills the entire hub
+        if let Some(max_tid) = self.hub_maximized_terminal {
+            return div()
+                .id("hub-view")
+                .size_full()
+                .min_w_0()
+                .min_h_0()
+                .overflow_hidden()
+                .bg(rgb(theme.terminal_bg))
+                .flex()
+                .flex_col()
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .min_h_0()
+                        .overflow_hidden()
+                        .child(self.render_hub_terminal_pane(max_tid, cx)),
+                );
+        }
+
         let page_terminals = self.hub_grid.page_terminals().to_vec();
         let page_count = self.hub_grid.page_count();
         let current_page = self.hub_grid.current_page;
@@ -337,40 +359,35 @@ impl ArborWindow {
                 );
         };
 
-        // Build styled lines — limit to last 80 lines and truncate to pane width
+        // Build styled lines — full scrollback, truncated to pane width
         let selection = self.terminal_selection_for_session(session.id);
         let ime_text = self.ime_marked_text.as_deref();
         let all_lines = styled_lines_for_session(session, theme, is_focused, selection, ime_text);
-        let max_visible = 80;
         let pane_cols = self
             .hub_pane_grid_sizes
             .get(&terminal_id)
             .map(|(_, cols, ..)| *cols as usize)
             .unwrap_or(120);
-        let styled_lines: Vec<_> = if all_lines.len() > max_visible {
-            all_lines[all_lines.len() - max_visible..].to_vec()
-        } else {
-            all_lines
-        }
-        .into_iter()
-        .map(|mut line| {
-            // Truncate cells to pane column count to prevent overflow
-            line.cells.truncate(pane_cols);
-            line.runs = line
-                .runs
-                .into_iter()
-                .map(|mut run| {
-                    // Truncate by character count, not byte count
-                    let char_count: usize = run.text.chars().count();
-                    if char_count > pane_cols {
-                        run.text = run.text.chars().take(pane_cols).collect();
-                    }
-                    run
-                })
-                .collect();
-            line
-        })
-        .collect();
+        let styled_lines: Vec<_> = all_lines
+            .into_iter()
+            .map(|mut line| {
+                // Truncate cells to pane column count to prevent overflow
+                line.cells.truncate(pane_cols);
+                line.runs = line
+                    .runs
+                    .into_iter()
+                    .map(|mut run| {
+                        // Truncate by character count, not byte count
+                        let char_count: usize = run.text.chars().count();
+                        if char_count > pane_cols {
+                            run.text = run.text.chars().take(pane_cols).collect();
+                        }
+                        run
+                    })
+                    .collect();
+                line
+            })
+            .collect();
         let mono_font = terminal_mono_font(cx);
         let scale = self.terminal_font_scale;
         let cell_width = terminal_cell_width_px(cx) * scale;
@@ -545,6 +562,34 @@ impl ArborWindow {
                             .text_color(rgb(theme.text_disabled))
                             .child(worktree_label),
                     )
+                    // Maximize/minimize button
+                    .child({
+                        let max_tid = terminal_id;
+                        let is_maximized = self.hub_maximized_terminal == Some(terminal_id);
+                        div()
+                            .id(ElementId::Name(
+                                format!("hub-pane-max-{terminal_id}").into(),
+                            ))
+                            .cursor_pointer()
+                            .flex_none()
+                            .text_xs()
+                            .text_color(rgb(theme.text_disabled))
+                            .hover(|this| this.text_color(rgb(theme.text_primary)))
+                            .child(if is_maximized {
+                                "\u{f066}" // compress icon
+                            } else {
+                                "\u{f065}" // expand icon
+                            })
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                if this.hub_maximized_terminal == Some(max_tid) {
+                                    this.hub_maximized_terminal = None;
+                                } else {
+                                    this.hub_maximized_terminal = Some(max_tid);
+                                }
+                                cx.notify();
+                                cx.stop_propagation();
+                            }))
+                    })
                     // Close pane button on header
                     .child({
                         let close_tid = terminal_id;
