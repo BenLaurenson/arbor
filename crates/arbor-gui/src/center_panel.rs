@@ -44,7 +44,7 @@ impl ArborWindow {
         };
         self.rewrap_diff_sessions_if_needed(wrap_columns);
         // Prune stale hub terminals only when the hub has entries
-        if self.hub_layout.terminal_count() > 0 {
+        if self.hub_grid.terminal_count() > 0 {
             self.hub_prune_stale_terminals();
         }
 
@@ -58,7 +58,7 @@ impl ArborWindow {
         current_tabs.extend(
             terminals
                 .iter()
-                .filter(|session| !self.hub_layout.contains_terminal(session.id))
+                .filter(|session| !self.hub_grid.contains_terminal(session.id))
                 .map(|session| CenterTab::Terminal(session.id)),
         );
         current_tabs.extend(

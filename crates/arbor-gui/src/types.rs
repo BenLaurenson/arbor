@@ -1778,8 +1778,9 @@ impl Render for DraggedPaneDivider {
     }
 }
 
-/// Drag payload for hub split dividers.
+/// Drag payload for hub split dividers (legacy).
 #[derive(Clone)]
+#[allow(dead_code)]
 pub(crate) struct DraggedHubDivider {
     /// Path in the split tree to the node containing this divider.
     pub(crate) path: Vec<usize>,
@@ -2455,6 +2456,7 @@ pub(crate) struct ArborWindow {
     pub(crate) center_tab_order: Vec<CenterTab>,
     pub(crate) terminal_font_scale: f32,
     pub(crate) hub_layout: hub_layout::HubPane,
+    pub(crate) hub_grid: hub_grid::HubGrid,
     pub(crate) hub_active_terminal_id: Option<u64>,
     /// Per-hub-terminal grid sizes captured during paint via canvas bounds.
     pub(crate) hub_pane_grid_sizes: HashMap<u64, (u16, u16, u16, u16)>,

@@ -292,7 +292,7 @@ impl ArborWindow {
         }
 
         // For hub terminals, use grid sizes captured during paint by canvas callbacks
-        let hub_terminal_ids: Vec<u64> = self.hub_layout.terminal_ids();
+        let hub_terminal_ids: Vec<u64> = self.hub_grid.terminals.clone();
 
         let mut sessions_to_close = Vec::new();
         let mut pending_notifications = Vec::new();

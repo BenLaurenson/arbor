@@ -33,6 +33,7 @@ mod github_pr_refresh;
 mod github_service;
 mod graphql;
 mod helpers;
+mod hub_grid;
 mod hub_layout;
 mod hub_rendering;
 mod issue_cache_store;

@@ -42,35 +42,126 @@ fn compute_drop_zone(mouse: gpui::Point<Pixels>, bounds: Bounds<Pixels>) -> HubD
 }
 
 impl ArborWindow {
-    /// Remove terminals from the hub layout that no longer exist in self.terminals.
+    /// Remove terminals from the hub that no longer exist in self.terminals.
     pub(crate) fn hub_prune_stale_terminals(&mut self) {
         let stale_ids: Vec<u64> = self
-            .hub_layout
-            .terminal_ids()
-            .into_iter()
+            .hub_grid
+            .terminals
+            .iter()
+            .copied()
             .filter(|id| !self.terminals.iter().any(|t| t.id == *id))
             .collect();
-        for id in stale_ids {
-            self.hub_layout.remove_terminal(id);
+        for id in &stale_ids {
+            self.hub_grid.remove_terminal(*id);
+            self.hub_layout.remove_terminal(*id);
         }
     }
 
-    /// Render the full hub view — a recursive split layout of terminal panes.
+    /// Render the hub view as an equal-sized grid with pagination.
     pub(crate) fn render_hub_view(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let theme = self.theme();
-        let layout = self.hub_layout.clone();
+        let page_terminals = self.hub_grid.page_terminals().to_vec();
+        let page_count = self.hub_grid.page_count();
+        let current_page = self.hub_grid.current_page;
+        let (rows, cols) = hub_grid::grid_dimensions(page_terminals.len());
 
-        div()
+        let mut hub = div()
             .id("hub-view")
             .size_full()
             .min_w_0()
             .min_h_0()
             .overflow_hidden()
             .bg(rgb(theme.terminal_bg))
-            .child(self.render_hub_node(&layout, Vec::new(), cx))
+            .flex()
+            .flex_col();
+
+        if page_terminals.is_empty() {
+            hub = hub.child(
+                div().flex_1().flex().items_center().justify_center().child(
+                    div()
+                        .text_sm()
+                        .text_color(rgb(theme.text_disabled))
+                        .child("Click a session to open it here"),
+                ),
+            );
+        } else {
+            // Grid of terminal panes — equal-sized rows and columns
+            let mut grid = div().flex_1().flex().flex_col().gap(px(2.));
+
+            for row in 0..rows {
+                let mut row_div = div().flex_1().flex().flex_row().gap(px(2.)).min_h_0();
+
+                for col in 0..cols {
+                    let idx = row * cols + col;
+                    if idx < page_terminals.len() {
+                        row_div = row_div.child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .min_h_0()
+                                .overflow_hidden()
+                                .child(self.render_hub_terminal_pane(page_terminals[idx], cx)),
+                        );
+                    } else {
+                        // Empty cell to maintain grid structure
+                        row_div = row_div.child(div().flex_1().min_w_0().min_h_0());
+                    }
+                }
+
+                grid = grid.child(row_div);
+            }
+
+            hub = hub.child(grid);
+        }
+
+        // Page indicator dots
+        if page_count > 1 {
+            let mut dots = div()
+                .flex_none()
+                .h(px(20.))
+                .w_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .gap(px(6.));
+
+            for page in 0..page_count {
+                let is_current = page == current_page;
+                dots = dots.child(
+                    div()
+                        .id(ElementId::Name(format!("hub-page-dot-{page}").into()))
+                        .cursor_pointer()
+                        .w(px(if is_current {
+                            8.
+                        } else {
+                            6.
+                        }))
+                        .h(px(if is_current {
+                            8.
+                        } else {
+                            6.
+                        }))
+                        .rounded_full()
+                        .bg(rgb(if is_current {
+                            theme.accent
+                        } else {
+                            theme.text_disabled
+                        }))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.hub_grid.go_to_page(page);
+                            cx.notify();
+                        })),
+                );
+            }
+
+            hub = hub.child(dots);
+        }
+
+        hub
     }
 
-    /// Recursively render a node in the hub split tree.
+    /// Recursively render a node in the hub split tree (legacy, used by old layout).
+    #[allow(dead_code)]
     fn render_hub_node(
         &self,
         pane: &hub_layout::HubPane,
@@ -516,7 +607,7 @@ impl ArborWindow {
             })
     }
 
-    /// Render a draggable divider between hub split panes.
+    #[allow(dead_code)]
     fn render_hub_divider(
         &self,
         is_horizontal: bool,
@@ -592,7 +683,7 @@ impl ArborWindow {
         }
     }
 
-    /// Handle drag events on hub dividers to resize split ratios.
+    #[allow(dead_code)]
     fn handle_hub_divider_drag(
         &mut self,
         event: &DragMoveEvent<DraggedHubDivider>,
@@ -654,19 +745,23 @@ impl ArborWindow {
     /// Add a terminal to the hub layout. If the terminal is already present,
     /// focus it instead.
     pub(crate) fn hub_add_terminal(&mut self, terminal_id: u64, cx: &mut Context<Self>) {
-        if self.hub_layout.contains_terminal(terminal_id) {
+        if self.hub_grid.contains_terminal(terminal_id) {
             self.hub_active_terminal_id = Some(terminal_id);
+            // Navigate to the page containing this terminal
+            if let Some(page) = self.hub_grid.page_for_terminal(terminal_id) {
+                self.hub_grid.current_page = page;
+            }
             cx.notify();
             return;
         }
-        self.hub_layout.add_terminal(terminal_id);
+        self.hub_grid.add_terminal(terminal_id);
+        self.hub_layout.add_terminal(terminal_id); // keep old tree in sync for now
         self.hub_active_terminal_id = Some(terminal_id);
         self.sync_hub_layout_store(cx);
         cx.notify();
     }
 
-    /// Remove a terminal from the hub layout, close the terminal session,
-    /// and collapse empty splits.
+    /// Remove a terminal from the hub, close the terminal session.
     pub(crate) fn hub_remove_terminal(&mut self, terminal_id: u64, cx: &mut Context<Self>) {
         // Remove from connected session tracking
         if let Some(session_id) = self.hub_terminal_to_session.remove(&terminal_id) {
@@ -674,11 +769,12 @@ impl ArborWindow {
         }
         self.hub_pane_grid_sizes.remove(&terminal_id);
         self.hub_pane_bounds.remove(&terminal_id);
+        self.hub_grid.remove_terminal(terminal_id);
         self.hub_layout.remove_terminal(terminal_id);
         // Also close the actual terminal session
         self.close_terminal_session_by_id(terminal_id);
         if self.hub_active_terminal_id == Some(terminal_id) {
-            self.hub_active_terminal_id = self.hub_layout.terminal_ids().first().copied();
+            self.hub_active_terminal_id = self.hub_grid.page_terminals().first().copied();
         }
         self.sync_hub_layout_store(cx);
         self.sync_daemon_session_store(cx);
@@ -823,34 +919,14 @@ impl ArborWindow {
         cx: &mut Context<Self>,
     ) {
         let source_id = dragged.terminal_id;
+        self.hub_drop_target = None;
         if source_id == target_id {
-            self.hub_drop_target = None;
             cx.notify();
             return;
         }
 
-        // Get the zone from the stored drop target
-        let zone = self
-            .hub_drop_target
-            .take()
-            .map(|dt| match dt.zone {
-                HubDropZone::Left => hub_layout::DropZone::Left,
-                HubDropZone::Right => hub_layout::DropZone::Right,
-                HubDropZone::Top => hub_layout::DropZone::Top,
-                HubDropZone::Bottom => hub_layout::DropZone::Bottom,
-                HubDropZone::Center => hub_layout::DropZone::Center,
-            })
-            .unwrap_or(hub_layout::DropZone::Right);
-
-        // Remove source from its position, then split target with source
-        self.hub_layout.remove_terminal(source_id);
-        if zone == hub_layout::DropZone::Center {
-            // Center = swap: replace target with source
-            self.hub_layout
-                .split_at(target_id, source_id, hub_layout::DropZone::Center);
-        } else {
-            self.hub_layout.split_at(target_id, source_id, zone);
-        }
+        // Swap positions in the grid
+        self.hub_grid.swap_terminals(source_id, target_id);
         self.hub_active_terminal_id = Some(source_id);
         self.sync_hub_layout_store(cx);
         cx.notify();
