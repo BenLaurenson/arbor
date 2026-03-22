@@ -1100,4 +1100,89 @@ mod tests {
         );
         assert_eq!(result, Some((20, 100)));
     }
+
+    #[test]
+    fn grid_position_accounts_for_content_area_offset() {
+        // Content area starts at (116, 32) — already offset from pane origin
+        let content_bounds = Bounds {
+            origin: gpui::Point {
+                x: px(116.),
+                y: px(32.),
+            },
+            size: gpui::Size {
+                width: px(400.),
+                height: px(300.),
+            },
+        };
+        let scroll_offset = gpui::Point {
+            x: px(0.),
+            y: px(0.),
+        };
+        let line_height = 19.0_f32;
+        let cell_width = 9.0_f32;
+        let line_count = 50;
+
+        // Click at (125, 51) — 9px into content horizontally, 19px vertically
+        let pos = gpui::Point {
+            x: px(125.),
+            y: px(51.),
+        };
+
+        let result = terminal_grid_position_from_pointer(
+            pos,
+            content_bounds,
+            scroll_offset,
+            line_height,
+            cell_width,
+            line_count,
+        );
+
+        assert_eq!(result, Some(TerminalGridPosition { line: 1, column: 1 }));
+    }
+
+    #[test]
+    fn grid_position_with_per_pane_scroll_offset() {
+        let content_bounds = Bounds {
+            origin: gpui::Point {
+                x: px(16.),
+                y: px(28.),
+            },
+            size: gpui::Size {
+                width: px(400.),
+                height: px(300.),
+            },
+        };
+        // Scrolled down 190px (10 lines at 19px each)
+        let scroll_offset = gpui::Point {
+            x: px(0.),
+            y: px(-190.),
+        };
+        let line_height = 19.0_f32;
+        let cell_width = 9.0_f32;
+        let line_count = 100;
+
+        // Click at the very top of the content area
+        let pos = gpui::Point {
+            x: px(25.),
+            y: px(28.),
+        };
+
+        let result = terminal_grid_position_from_pointer(
+            pos,
+            content_bounds,
+            scroll_offset,
+            line_height,
+            cell_width,
+            line_count,
+        );
+
+        // local_y = 0, content_y = 0 - (-190) = 190, line = floor(190/19) = 10
+        assert_eq!(
+            result,
+            Some(TerminalGridPosition {
+                line: 10,
+                column: 1
+            })
+        );
+    }
 }
