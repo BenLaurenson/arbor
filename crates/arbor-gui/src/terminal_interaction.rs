@@ -119,6 +119,51 @@ impl ArborWindow {
             .filter(|selection| selection.session_id == session_id)
     }
 
+    /// Returns (content_bounds, scroll_offset) for a hub terminal pane,
+    /// accounting for padding (px_2 = 8px each side, pt_1 = 4px top).
+    /// The `hub_pane_bounds` are captured by the canvas inside the content area
+    /// (already excludes the 24px header), but include the padding region.
+    /// Falls back to the standalone terminal scroll handle for non-hub views.
+    fn terminal_content_bounds_and_scroll(
+        &self,
+        session_id: u64,
+    ) -> (Bounds<Pixels>, gpui::Point<Pixels>) {
+        if self.hub_tab_active
+            && let Some(pane_bounds) = self.hub_pane_bounds.get(&session_id)
+        {
+            // hub_pane_bounds comes from the canvas inside hub-terminal-content-{id},
+            // which is already below the 24px header. But the terminal content has
+            // px_2 (8px each side) and pt_1 (4px top) padding.
+            let h_pad = px(8.);
+            let v_pad = px(4.);
+            let content_origin = gpui::Point {
+                x: pane_bounds.origin.x + h_pad,
+                y: pane_bounds.origin.y + v_pad,
+            };
+            let content_size = gpui::Size {
+                width: pane_bounds.size.width - h_pad * 2.0,
+                height: pane_bounds.size.height - v_pad,
+            };
+            let content_bounds = Bounds {
+                origin: content_origin,
+                size: content_size,
+            };
+
+            let scroll_offset = self
+                .hub_pane_scroll_handles
+                .get(&session_id)
+                .map(|h| h.offset())
+                .unwrap_or_default();
+
+            return (content_bounds, scroll_offset);
+        }
+
+        // Standalone terminal view
+        let bounds = self.terminal_scroll_handle.bounds();
+        let offset = self.terminal_scroll_handle.offset();
+        (bounds, offset)
+    }
+
     pub(crate) fn handle_terminal_output_mouse_down(
         &mut self,
         event: &MouseDownEvent,
@@ -142,13 +187,7 @@ impl ArborWindow {
         let lines = self.terminal_display_lines_for_session(session_id);
         let line_height = terminal_line_height_px(cx) * self.terminal_font_scale;
         let cell_width = terminal_cell_width_px(cx) * self.terminal_font_scale;
-        // Use pane bounds if available (hub), otherwise scroll handle bounds
-        let scroll_bounds = self
-            .hub_pane_bounds
-            .get(&session_id)
-            .copied()
-            .unwrap_or_else(|| self.terminal_scroll_handle.bounds());
-        let scroll_offset = self.terminal_scroll_handle.offset();
+        let (scroll_bounds, scroll_offset) = self.terminal_content_bounds_and_scroll(session_id);
         let point = terminal_grid_position_from_pointer(
             event.position,
             scroll_bounds,
@@ -223,12 +262,7 @@ impl ArborWindow {
         let lines = self.terminal_display_lines_for_session(session_id);
         let line_height = terminal_line_height_px(cx) * self.terminal_font_scale;
         let cell_width = terminal_cell_width_px(cx) * self.terminal_font_scale;
-        let scroll_bounds = self
-            .hub_pane_bounds
-            .get(&session_id)
-            .copied()
-            .unwrap_or_else(|| self.terminal_scroll_handle.bounds());
-        let scroll_offset = self.terminal_scroll_handle.offset();
+        let (scroll_bounds, scroll_offset) = self.terminal_content_bounds_and_scroll(session_id);
         let Some(head) = terminal_grid_position_from_pointer(
             event.position,
             scroll_bounds,
