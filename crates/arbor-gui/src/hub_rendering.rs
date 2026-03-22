@@ -674,6 +674,7 @@ impl ArborWindow {
                             .line_height(px(line_height))
                             .px_2()
                             .pt_1()
+                            .cursor_text()
                             .child(
                                 div()
                                     .id(ElementId::Name(
@@ -685,6 +686,21 @@ impl ArborWindow {
                                     .overflow_x_hidden()
                                     .overflow_y_scroll()
                                     .scrollbar_width(px(TERMINAL_SCROLLBAR_WIDTH_PX))
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(
+                                            Self::handle_terminal_output_mouse_down,
+                                        ),
+                                    )
+                                    .on_mouse_move(cx.listener(
+                                        Self::handle_terminal_output_mouse_move,
+                                    ))
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(
+                                            Self::handle_terminal_output_mouse_up,
+                                        ),
+                                    )
                                     .child(
                                         div()
                                             .w_full()

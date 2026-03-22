@@ -129,17 +129,30 @@ impl ArborWindow {
             return;
         }
 
-        let Some(session_id) = self.active_terminal_id_for_selected_worktree() else {
+        // Support both standalone terminal and hub terminal selection
+        let session_id = if self.hub_tab_active {
+            self.hub_active_terminal_id
+        } else {
+            self.active_terminal_id_for_selected_worktree()
+        };
+        let Some(session_id) = session_id else {
             return;
         };
 
         let lines = self.terminal_display_lines_for_session(session_id);
-        let line_height = terminal_line_height_px(cx);
-        let cell_width = terminal_cell_width_px(cx);
+        let line_height = terminal_line_height_px(cx) * self.terminal_font_scale;
+        let cell_width = terminal_cell_width_px(cx) * self.terminal_font_scale;
+        // Use pane bounds if available (hub), otherwise scroll handle bounds
+        let scroll_bounds = self
+            .hub_pane_bounds
+            .get(&session_id)
+            .copied()
+            .unwrap_or_else(|| self.terminal_scroll_handle.bounds());
+        let scroll_offset = self.terminal_scroll_handle.offset();
         let point = terminal_grid_position_from_pointer(
             event.position,
-            self.terminal_scroll_handle.bounds(),
-            self.terminal_scroll_handle.offset(),
+            scroll_bounds,
+            scroll_offset,
             line_height,
             cell_width,
             lines.len(),
@@ -195,7 +208,12 @@ impl ArborWindow {
             return;
         }
 
-        let Some(session_id) = self.active_terminal_id_for_selected_worktree() else {
+        let session_id = if self.hub_tab_active {
+            self.hub_active_terminal_id
+        } else {
+            self.active_terminal_id_for_selected_worktree()
+        };
+        let Some(session_id) = session_id else {
             return;
         };
         let Some(anchor) = self.terminal_selection_drag_anchor else {
@@ -203,12 +221,18 @@ impl ArborWindow {
         };
 
         let lines = self.terminal_display_lines_for_session(session_id);
-        let line_height = terminal_line_height_px(cx);
-        let cell_width = terminal_cell_width_px(cx);
+        let line_height = terminal_line_height_px(cx) * self.terminal_font_scale;
+        let cell_width = terminal_cell_width_px(cx) * self.terminal_font_scale;
+        let scroll_bounds = self
+            .hub_pane_bounds
+            .get(&session_id)
+            .copied()
+            .unwrap_or_else(|| self.terminal_scroll_handle.bounds());
+        let scroll_offset = self.terminal_scroll_handle.offset();
         let Some(head) = terminal_grid_position_from_pointer(
             event.position,
-            self.terminal_scroll_handle.bounds(),
-            self.terminal_scroll_handle.offset(),
+            scroll_bounds,
+            scroll_offset,
             line_height,
             cell_width,
             lines.len(),
