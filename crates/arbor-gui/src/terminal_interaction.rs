@@ -119,18 +119,22 @@ impl ArborWindow {
             .filter(|selection| selection.session_id == session_id)
     }
 
-    /// Returns (content_bounds, scroll_offset) for a hub terminal pane,
-    /// accounting for padding (px_2 = 8px each side, pt_1 = 4px top).
-    /// The `hub_pane_bounds` are captured by the canvas inside the content area
-    /// (already excludes the 24px header), but include the padding region.
-    /// Falls back to the standalone terminal scroll handle for non-hub views.
+    /// Returns (content_bounds, scroll_offset) for a terminal pane.
+    /// For hub panes: adjusts canvas bounds by padding (px_2 = 8px each side, pt_1 = 4px top)
+    /// and reads per-pane scroll offset. Returns zero-size bounds if hub pane bounds haven't
+    /// been captured yet (first frame), which causes grid position to return None safely.
+    /// For standalone terminals: uses the single terminal scroll handle.
     fn terminal_content_bounds_and_scroll(
         &self,
         session_id: u64,
     ) -> (Bounds<Pixels>, gpui::Point<Pixels>) {
-        if self.hub_tab_active
-            && let Some(pane_bounds) = self.hub_pane_bounds.get(&session_id)
-        {
+        if self.hub_tab_active {
+            let Some(pane_bounds) = self.hub_pane_bounds.get(&session_id) else {
+                // Bounds not captured yet (first frame) — return zero-size so
+                // terminal_grid_position_from_pointer returns None safely.
+                return (Bounds::default(), gpui::Point::default());
+            };
+
             // hub_pane_bounds comes from the canvas inside hub-terminal-content-{id},
             // which is already below the 24px header. But the terminal content has
             // px_2 (8px each side) and pt_1 (4px top) padding.
@@ -197,7 +201,13 @@ impl ArborWindow {
             lines.len(),
         );
 
+        // Always focus the terminal on click, even if grid position can't be
+        // computed (e.g. first frame before pane bounds are captured).
+        window.focus(&self.terminal_focus);
+        self.focus_terminal_on_next_render = false;
+
         let Some(point) = point else {
+            cx.notify();
             return;
         };
 
@@ -232,8 +242,6 @@ impl ArborWindow {
             self.terminal_selection_drag_anchor = Some(point);
         }
 
-        window.focus(&self.terminal_focus);
-        self.focus_terminal_on_next_render = false;
         cx.notify();
     }
 

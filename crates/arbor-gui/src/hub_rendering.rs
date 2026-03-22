@@ -360,7 +360,7 @@ impl ArborWindow {
                 );
         };
 
-        // Build styled lines — full scrollback, truncated to pane width
+        // Build styled lines — cap to 5x viewport rows for performance, truncate to pane width
         let selection = self.terminal_selection_for_session(session.id);
         let ime_text = self.ime_marked_text.as_deref();
         let scroll_handle = self.hub_pane_scroll_handles.get(&terminal_id).cloned();
@@ -370,8 +370,16 @@ impl ArborWindow {
             .get(&terminal_id)
             .map(|(_, cols, ..)| *cols as usize)
             .unwrap_or(120);
+        let pane_rows = self
+            .hub_pane_grid_sizes
+            .get(&terminal_id)
+            .map(|(rows, ..)| *rows as usize)
+            .unwrap_or(24);
+        let max_lines = pane_rows.saturating_mul(5).max(200);
+        let skip = all_lines.len().saturating_sub(max_lines);
         let styled_lines: Vec<_> = all_lines
             .into_iter()
+            .skip(skip)
             .map(|mut line| {
                 // Truncate cells to pane column count to prevent overflow
                 line.cells.truncate(pane_cols);
@@ -395,24 +403,6 @@ impl ArborWindow {
         let cell_width = terminal_cell_width_px(cx) * scale;
         let line_height = terminal_line_height_px(cx) * scale;
         let font_size = TERMINAL_FONT_SIZE_PX * scale;
-
-        let total_lines = styled_lines.len();
-        let pane_scroll_offset = self
-            .hub_pane_scroll_handles
-            .get(&terminal_id)
-            .map(|h| f32::from(h.offset().y))
-            .unwrap_or(0.);
-        let viewport_height = self
-            .hub_pane_grid_sizes
-            .get(&terminal_id)
-            .map(|(_, _, _, ph)| *ph as f32)
-            .unwrap_or(300.);
-        let (vis_start, vis_end) = visible_line_range(
-            viewport_height,
-            line_height,
-            pane_scroll_offset,
-            total_lines,
-        );
 
         // Pane header: shows session name/branch + worktree
         let pane_title = session
@@ -732,40 +722,18 @@ impl ArborWindow {
                                             .flex()
                                             .flex_col()
                                             .gap_0()
-                                            // Spacer for lines above viewport
-                                            .child(
-                                                div()
-                                                    .flex_none()
-                                                    .w_full()
-                                                    .h(px(vis_start as f32 * line_height)),
-                                            )
-                                            .children(
-                                                styled_lines
-                                                    .into_iter()
-                                                    .skip(vis_start)
-                                                    .take(vis_end.saturating_sub(vis_start))
-                                                    .map(|line| {
-                                                        render_terminal_line_with_font_size(
-                                                            line,
-                                                            theme,
-                                                            cell_width,
-                                                            line_height,
-                                                            mono_font.clone(),
-                                                            font_size,
-                                                        )
-                                                    }),
-                                            )
-                                            // Spacer for lines below viewport
-                                            .child(
-                                                div()
-                                                    .flex_none()
-                                                    .w_full()
-                                                    .h(px(
-                                                        total_lines.saturating_sub(vis_end)
-                                                            as f32
-                                                            * line_height,
-                                                    )),
-                                            ),
+                                            .children(styled_lines.into_iter().map(
+                                                |line| {
+                                                    render_terminal_line_with_font_size(
+                                                        line,
+                                                        theme,
+                                                        cell_width,
+                                                        line_height,
+                                                        mono_font.clone(),
+                                                        font_size,
+                                                    )
+                                                },
+                                            )),
                                     ),
                             ),
                     )
