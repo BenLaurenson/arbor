@@ -360,7 +360,7 @@ impl ArborWindow {
                 );
         };
 
-        // Build styled lines — cap to 5x viewport rows for performance, truncate to pane width
+        // Build styled lines, truncated to pane width
         let selection = self.terminal_selection_for_session(session.id);
         let ime_text = self.ime_marked_text.as_deref();
         let scroll_handle = self.hub_pane_scroll_handles.get(&terminal_id).cloned();
@@ -370,16 +370,8 @@ impl ArborWindow {
             .get(&terminal_id)
             .map(|(_, cols, ..)| *cols as usize)
             .unwrap_or(120);
-        let pane_rows = self
-            .hub_pane_grid_sizes
-            .get(&terminal_id)
-            .map(|(rows, ..)| *rows as usize)
-            .unwrap_or(24);
-        let max_lines = pane_rows.saturating_mul(5).max(200);
-        let skip = all_lines.len().saturating_sub(max_lines);
         let styled_lines: Vec<_> = all_lines
             .into_iter()
-            .skip(skip)
             .map(|mut line| {
                 // Truncate cells to pane column count to prevent overflow
                 line.cells.truncate(pane_cols);
