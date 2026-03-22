@@ -54,6 +54,7 @@ impl ArborWindow {
         for id in &stale_ids {
             self.hub_grid.remove_terminal(*id);
             self.hub_layout.remove_terminal(*id);
+            self.hub_pane_scroll_handles.remove(id);
         }
     }
 
@@ -362,6 +363,7 @@ impl ArborWindow {
         // Build styled lines — full scrollback, truncated to pane width
         let selection = self.terminal_selection_for_session(session.id);
         let ime_text = self.ime_marked_text.as_deref();
+        let scroll_handle = self.hub_pane_scroll_handles.get(&terminal_id).cloned();
         let all_lines = styled_lines_for_session(session, theme, is_focused, selection, ime_text);
         let pane_cols = self
             .hub_pane_grid_sizes
@@ -686,6 +688,9 @@ impl ArborWindow {
                                     .overflow_x_hidden()
                                     .overflow_y_scroll()
                                     .scrollbar_width(px(TERMINAL_SCROLLBAR_WIDTH_PX))
+                                    .when_some(scroll_handle, |el, handle| {
+                                        el.track_scroll(&handle)
+                                    })
                                     .on_mouse_down(
                                         MouseButton::Left,
                                         cx.listener(
@@ -877,6 +882,9 @@ impl ArborWindow {
             return;
         }
         self.hub_grid.add_terminal(terminal_id);
+        self.hub_pane_scroll_handles
+            .entry(terminal_id)
+            .or_default();
         self.hub_layout.add_terminal(terminal_id); // keep old tree in sync for now
         self.hub_active_terminal_id = Some(terminal_id);
         self.sync_hub_layout_store(cx);
@@ -891,6 +899,7 @@ impl ArborWindow {
         }
         self.hub_pane_grid_sizes.remove(&terminal_id);
         self.hub_pane_bounds.remove(&terminal_id);
+        self.hub_pane_scroll_handles.remove(&terminal_id);
         self.hub_grid.remove_terminal(terminal_id);
         self.hub_layout.remove_terminal(terminal_id);
         // Also close the actual terminal session

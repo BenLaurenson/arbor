@@ -2465,7 +2465,6 @@ pub(crate) struct ArborWindow {
     /// Pixel bounds of each hub pane, captured during paint for drop zone detection.
     pub(crate) hub_pane_bounds: HashMap<u64, Bounds<Pixels>>,
     /// Per-hub-pane scroll handles for accurate scroll offset tracking.
-    #[allow(dead_code)]
     pub(crate) hub_pane_scroll_handles: HashMap<u64, ScrollHandle>,
     pub(crate) hub_drop_target: Option<HubDropTarget>,
     /// Claude session IDs that are connected to hub terminals (for sidebar active state).
