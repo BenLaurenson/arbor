@@ -854,6 +854,29 @@ pub(crate) fn should_auto_follow_terminal_output(changed: bool, was_near_bottom:
     changed && was_near_bottom
 }
 
+/// Calculate the range of lines visible in the viewport, plus a buffer.
+/// `scroll_offset_y` is negative when scrolled down (GPUI convention).
+/// Returns (start_line, end_line) as a half-open range.
+pub(crate) fn visible_line_range(
+    viewport_height: f32,
+    line_height: f32,
+    scroll_offset_y: f32,
+    total_lines: usize,
+) -> (usize, usize) {
+    if line_height <= 0. || total_lines == 0 {
+        return (0, 0);
+    }
+
+    let buffer_lines = 2_usize;
+    // scroll_offset_y is negative when scrolled down
+    let first_visible = ((-scroll_offset_y) / line_height).floor().max(0.) as usize;
+    let visible_count = (viewport_height / line_height).ceil() as usize + 1;
+    let start = first_visible.saturating_sub(buffer_lines);
+    let end = (first_visible + visible_count + buffer_lines).min(total_lines);
+
+    (start, end)
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {
@@ -1184,5 +1207,40 @@ mod tests {
                 column: 1
             })
         );
+    }
+
+    #[test]
+    fn viewport_line_range_not_scrolled() {
+        // 300px viewport / 19px line height = ~15.8 visible lines
+        let (start, end) = visible_line_range(300., 19., 0., 50);
+        assert_eq!(start, 0);
+        // ceil(300/19)=16 + 1 = 17 visible, + 2 buffer = 19
+        assert!(end <= 20);
+        assert!(end > 15);
+    }
+
+    #[test]
+    fn viewport_line_range_scrolled_down() {
+        // Scrolled down 190px (10 lines at 19px)
+        let (start, end) = visible_line_range(300., 19., -190., 100);
+        // first_visible = 10, start = 10-2 = 8
+        assert_eq!(start, 8);
+        // end = 10 + 17 + 2 = 29
+        assert!(end >= 27);
+        assert!(end <= 31);
+    }
+
+    #[test]
+    fn viewport_line_range_clamps_to_total() {
+        let (start, end) = visible_line_range(300., 19., 0., 5);
+        assert_eq!(start, 0);
+        assert_eq!(end, 5);
+    }
+
+    #[test]
+    fn viewport_line_range_zero_lines() {
+        let (start, end) = visible_line_range(300., 19., 0., 0);
+        assert_eq!(start, 0);
+        assert_eq!(end, 0);
     }
 }

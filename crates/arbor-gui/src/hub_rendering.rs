@@ -396,6 +396,24 @@ impl ArborWindow {
         let line_height = terminal_line_height_px(cx) * scale;
         let font_size = TERMINAL_FONT_SIZE_PX * scale;
 
+        let total_lines = styled_lines.len();
+        let pane_scroll_offset = self
+            .hub_pane_scroll_handles
+            .get(&terminal_id)
+            .map(|h| f32::from(h.offset().y))
+            .unwrap_or(0.);
+        let viewport_height = self
+            .hub_pane_grid_sizes
+            .get(&terminal_id)
+            .map(|(_, _, _, ph)| *ph as f32)
+            .unwrap_or(300.);
+        let (vis_start, vis_end) = visible_line_range(
+            viewport_height,
+            line_height,
+            pane_scroll_offset,
+            total_lines,
+        );
+
         // Pane header: shows session name/branch + worktree
         let pane_title = session
             .last_command
@@ -714,18 +732,40 @@ impl ArborWindow {
                                             .flex()
                                             .flex_col()
                                             .gap_0()
-                                            .children(styled_lines.into_iter().map(
-                                                |line| {
-                                                    render_terminal_line_with_font_size(
-                                                        line,
-                                                        theme,
-                                                        cell_width,
-                                                        line_height,
-                                                        mono_font.clone(),
-                                                        font_size,
-                                                    )
-                                                },
-                                            )),
+                                            // Spacer for lines above viewport
+                                            .child(
+                                                div()
+                                                    .flex_none()
+                                                    .w_full()
+                                                    .h(px(vis_start as f32 * line_height)),
+                                            )
+                                            .children(
+                                                styled_lines
+                                                    .into_iter()
+                                                    .skip(vis_start)
+                                                    .take(vis_end.saturating_sub(vis_start))
+                                                    .map(|line| {
+                                                        render_terminal_line_with_font_size(
+                                                            line,
+                                                            theme,
+                                                            cell_width,
+                                                            line_height,
+                                                            mono_font.clone(),
+                                                            font_size,
+                                                        )
+                                                    }),
+                                            )
+                                            // Spacer for lines below viewport
+                                            .child(
+                                                div()
+                                                    .flex_none()
+                                                    .w_full()
+                                                    .h(px(
+                                                        total_lines.saturating_sub(vis_end)
+                                                            as f32
+                                                            * line_height,
+                                                    )),
+                                            ),
                                     ),
                             ),
                     )
@@ -882,9 +922,7 @@ impl ArborWindow {
             return;
         }
         self.hub_grid.add_terminal(terminal_id);
-        self.hub_pane_scroll_handles
-            .entry(terminal_id)
-            .or_default();
+        self.hub_pane_scroll_handles.entry(terminal_id).or_default();
         self.hub_layout.add_terminal(terminal_id); // keep old tree in sync for now
         self.hub_active_terminal_id = Some(terminal_id);
         self.sync_hub_layout_store(cx);
