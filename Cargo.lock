@@ -280,6 +280,7 @@ dependencies = [
  "arbor-web-ui",
  "async-trait",
  "axum",
+ "base64",
  "chrono",
  "config",
  "cron",

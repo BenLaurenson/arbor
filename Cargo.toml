@@ -35,6 +35,7 @@ alacritty_terminal = { git = "https://github.com/zed-industries/alacritty", rev 
 anyhow             = "1"
 async-trait        = "0.1"
 axum               = "0.8.4"
+base64             = "0.22"
 cocoa              = "0.26"
 config             = "0.15.19"
 divan              = { package = "codspeed-divan-compat", version = "4.3" }

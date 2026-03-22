@@ -360,41 +360,44 @@ impl ArborWindow {
                 );
         };
 
-        // Build styled lines, truncated to pane width
-        let selection = self.terminal_selection_for_session(session.id);
-        let ime_text = self.ime_marked_text.as_deref();
+        // Read pre-computed positioned runs from cache (updated in update_hub_render_caches)
         let scroll_handle = self.hub_pane_scroll_handles.get(&terminal_id).cloned();
-        let all_lines = styled_lines_for_session(session, theme, is_focused, selection, ime_text);
-        let pane_cols = self
-            .hub_pane_grid_sizes
-            .get(&terminal_id)
-            .map(|(_, cols, ..)| *cols as usize)
-            .unwrap_or(120);
-        let styled_lines: Vec<_> = all_lines
-            .into_iter()
-            .map(|mut line| {
-                // Truncate cells to pane column count to prevent overflow
-                line.cells.truncate(pane_cols);
-                line.runs = line
-                    .runs
-                    .into_iter()
-                    .map(|mut run| {
-                        // Truncate by character count, not byte count
-                        let char_count: usize = run.text.chars().count();
-                        if char_count > pane_cols {
-                            run.text = run.text.chars().take(pane_cols).collect();
-                        }
-                        run
-                    })
-                    .collect();
-                line
-            })
-            .collect();
         let mono_font = terminal_mono_font(cx);
         let scale = self.terminal_font_scale;
         let cell_width = terminal_cell_width_px(cx) * scale;
         let line_height = terminal_line_height_px(cx) * scale;
         let font_size = TERMINAL_FONT_SIZE_PX * scale;
+
+        let (positioned_runs, line_count) =
+            if let Some(cached) = self.hub_pane_render_cache.get(&terminal_id) {
+                (cached.runs.clone(), cached.line_count)
+            } else {
+                // Fallback: compute inline (shouldn't normally happen since
+                // update_hub_render_caches runs before render)
+                let selection = self.terminal_selection_for_session(session.id);
+                let ime_text = self.ime_marked_text.as_deref();
+                let all_lines =
+                    styled_lines_for_session(session, theme, is_focused, selection, ime_text);
+                let pane_cols = self
+                    .hub_pane_grid_sizes
+                    .get(&terminal_id)
+                    .map(|(_, cols, ..)| *cols as usize)
+                    .unwrap_or(120);
+                let runs: Vec<Vec<PositionedTerminalRun>> = all_lines
+                    .into_iter()
+                    .map(|mut line| {
+                        let cells = if line.cells.is_empty() {
+                            cells_from_runs(&line.runs)
+                        } else {
+                            line.cells.truncate(pane_cols);
+                            line.cells
+                        };
+                        positioned_runs_from_cells(&cells)
+                    })
+                    .collect();
+                let count = runs.len();
+                (Arc::new(runs), count)
+            };
 
         // Pane header: shows session name/branch + worktree
         let pane_title = session
@@ -706,8 +709,9 @@ impl ArborWindow {
                                             Self::handle_terminal_output_mouse_up,
                                         ),
                                     )
-                                    .child(render_hub_terminal_canvas(
-                                        styled_lines,
+                                    .child(render_hub_terminal_canvas_cached(
+                                        positioned_runs,
+                                        line_count,
                                         theme,
                                         cell_width,
                                         line_height,
@@ -828,6 +832,88 @@ impl ArborWindow {
         cx.notify();
     }
 
+    /// Pre-compute and cache positioned runs for hub terminal panes.
+    /// Called from `render()` before building the element tree so that
+    /// `render_hub_terminal_pane` (which takes `&self`) can read cached data.
+    pub(crate) fn update_hub_render_caches(&mut self, _cx: &App) {
+        if !self.hub_tab_active {
+            return;
+        }
+
+        let theme = self.theme();
+        let page_terminals = self.hub_grid.page_terminals();
+        let terminal_ids: Vec<u64> = if let Some(max_tid) = self.hub_maximized_terminal {
+            vec![max_tid]
+        } else {
+            page_terminals.to_vec()
+        };
+
+        for &terminal_id in &terminal_ids {
+            let Some(session) = self.terminals.iter().find(|t| t.id == terminal_id) else {
+                continue;
+            };
+            let is_focused = self.hub_active_terminal_id == Some(terminal_id);
+            let selection = self.terminal_selection_for_session(session.id).cloned();
+
+            // Check if cache is still valid
+            if let Some(cached) = self.hub_pane_render_cache.get(&terminal_id)
+                && cached.updated_at == session.updated_at_unix_ms
+                && cached.selection == selection
+                && cached.cursor == session.cursor
+            {
+                continue; // Cache hit — skip expensive recompute
+            }
+
+            // Cache miss — recompute
+            let ime_text = self.ime_marked_text.as_deref();
+            let all_lines =
+                styled_lines_for_session(session, theme, is_focused, selection.as_ref(), ime_text);
+            let pane_cols = self
+                .hub_pane_grid_sizes
+                .get(&terminal_id)
+                .map(|(_, cols, ..)| *cols as usize)
+                .unwrap_or(120);
+
+            let runs: Vec<Vec<PositionedTerminalRun>> = all_lines
+                .into_iter()
+                .map(|mut line| {
+                    let cells = if line.cells.is_empty() {
+                        cells_from_runs(&line.runs)
+                    } else {
+                        line.cells.truncate(pane_cols);
+                        line.runs = line
+                            .runs
+                            .into_iter()
+                            .map(|mut run| {
+                                let char_count: usize = run.text.chars().count();
+                                if char_count > pane_cols {
+                                    run.text = run.text.chars().take(pane_cols).collect();
+                                }
+                                run
+                            })
+                            .collect();
+                        line.cells
+                    };
+                    positioned_runs_from_cells(&cells)
+                })
+                .collect();
+
+            let line_count = runs.len();
+            self.hub_pane_render_cache
+                .insert(terminal_id, HubPaneRenderCache {
+                    updated_at: session.updated_at_unix_ms,
+                    selection,
+                    cursor: session.cursor,
+                    line_count,
+                    runs: Arc::new(runs),
+                });
+        }
+
+        // Prune cache entries for terminals no longer on current page
+        self.hub_pane_render_cache
+            .retain(|id, _| terminal_ids.contains(id));
+    }
+
     /// Focus a terminal in the hub — updates active terminal and syncs worktree context.
     pub(crate) fn hub_focus_terminal(
         &mut self,
@@ -885,6 +971,7 @@ impl ArborWindow {
         self.hub_pane_grid_sizes.remove(&terminal_id);
         self.hub_pane_bounds.remove(&terminal_id);
         self.hub_pane_scroll_handles.remove(&terminal_id);
+        self.hub_pane_render_cache.remove(&terminal_id);
         self.hub_grid.remove_terminal(terminal_id);
         self.hub_layout.remove_terminal(terminal_id);
         // Also close the actual terminal session

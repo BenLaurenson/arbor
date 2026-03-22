@@ -24,6 +24,7 @@ arbor-symphony = { path = "../arbor-symphony", optional = true }
 arbor-terminal-emulator = { path = "../arbor-terminal-emulator" }
 arbor-web-ui = { path = "../arbor-web-ui" }
 axum         = { features = ["ws"], workspace = true }
+base64       = { workspace = true }
 chrono       = { workspace = true }
 config       = { workspace = true }
 cron         = { workspace = true }

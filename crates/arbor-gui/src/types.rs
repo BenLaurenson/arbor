@@ -2192,6 +2192,16 @@ pub(crate) struct HubDropTarget {
     pub(crate) zone: HubDropZone,
 }
 
+/// Cached pre-computed positioned runs for a hub terminal pane.
+/// Invalidated when terminal output, selection, or cursor changes.
+pub(crate) struct HubPaneRenderCache {
+    pub(crate) updated_at: Option<u64>,
+    pub(crate) selection: Option<TerminalSelection>,
+    pub(crate) cursor: Option<TerminalCursor>,
+    pub(crate) line_count: usize,
+    pub(crate) runs: Arc<Vec<Vec<PositionedTerminalRun>>>,
+}
+
 pub(crate) struct RepoSettingsModal {
     pub(crate) repository_index: usize,
     pub(crate) group_key: String,
@@ -2466,6 +2476,9 @@ pub(crate) struct ArborWindow {
     pub(crate) hub_pane_bounds: HashMap<u64, Bounds<Pixels>>,
     /// Per-hub-pane scroll handles for accurate scroll offset tracking.
     pub(crate) hub_pane_scroll_handles: HashMap<u64, ScrollHandle>,
+    /// Cached pre-computed positioned runs per hub pane to avoid recomputing
+    /// styled lines + positioned runs every frame when nothing has changed.
+    pub(crate) hub_pane_render_cache: HashMap<u64, HubPaneRenderCache>,
     pub(crate) hub_drop_target: Option<HubDropTarget>,
     /// Claude session IDs that are connected to hub terminals (for sidebar active state).
     pub(crate) hub_connected_session_ids: HashSet<String>,

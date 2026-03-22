@@ -208,6 +208,7 @@ impl Render for ArborWindow {
         let workspace_width = f32::from(window.window_bounds().get_bounds().size.width);
         self.clamp_pane_widths_for_workspace(workspace_width);
         self.sync_ui_state_store(window, cx);
+        self.update_hub_render_caches(cx);
 
         let theme = self.theme();
         div()

@@ -60,6 +60,7 @@ pub(crate) trait RepositoryIssueProvider: Send + Sync {
 enum IssueProviderKind {
     GitHub,
     GitLab,
+    AzureDevOps,
 }
 
 impl IssueProviderKind {
@@ -67,6 +68,7 @@ impl IssueProviderKind {
         match self {
             Self::GitHub => "github",
             Self::GitLab => "gitlab",
+            Self::AzureDevOps => "azure-devops",
         }
     }
 
@@ -74,6 +76,7 @@ impl IssueProviderKind {
         match self {
             Self::GitHub => "GitHub",
             Self::GitLab => "GitLab",
+            Self::AzureDevOps => "Azure DevOps",
         }
     }
 }
@@ -151,6 +154,7 @@ impl Default for RepositoryIssueService {
         Self::new(vec![
             Box::new(GitHubIssueProvider),
             Box::new(GitLabIssueProvider),
+            Box::new(AzureDevOpsIssueProvider),
         ])
     }
 }
@@ -636,6 +640,242 @@ struct GitLabMetadataPayload {
     version: String,
 }
 
+// ── Azure DevOps issue provider ──────────────────────────────────────────
+
+struct AzureDevOpsIssueProvider;
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+struct AzureDevOpsRepoSpec {
+    org: String,
+    project: String,
+    repo: String,
+}
+
+impl AzureDevOpsRepoSpec {
+    fn from_remote_path(path: &str) -> Option<Self> {
+        let path = path.trim_start_matches('/');
+        // HTTPS: {org}/{project}/_git/{repo}
+        if let Some((before_git, repo)) = path.split_once("/_git/") {
+            let (org, project) = before_git.split_once('/')?;
+            if !org.is_empty() && !project.is_empty() && !repo.is_empty() {
+                return Some(Self {
+                    org: org.to_owned(),
+                    project: project.to_owned(),
+                    repo: repo.trim_end_matches(".git").to_owned(),
+                });
+            }
+        }
+        // SSH: v3/{org}/{project}/{repo}
+        let path = path.strip_prefix("v3/").unwrap_or(path);
+        let mut parts = path.splitn(3, '/');
+        let org = parts.next().filter(|s| !s.is_empty())?;
+        let project = parts.next().filter(|s| !s.is_empty())?;
+        let repo = parts.next().filter(|s| !s.is_empty())?;
+        Some(Self {
+            org: org.to_owned(),
+            project: project.to_owned(),
+            repo: repo.trim_end_matches(".git").to_owned(),
+        })
+    }
+
+    fn api_base(&self) -> String {
+        format!("https://dev.azure.com/{}/{}", self.org, self.project)
+    }
+
+    #[allow(dead_code)]
+    fn web_url(&self) -> String {
+        format!(
+            "https://dev.azure.com/{}/{}/_git/{}",
+            self.org, self.project, self.repo
+        )
+    }
+
+    fn workitems_url(&self) -> String {
+        format!(
+            "https://dev.azure.com/{}/{}/_workitems",
+            self.org, self.project
+        )
+    }
+}
+
+impl RepositoryIssueProvider for AzureDevOpsIssueProvider {
+    fn resolve_source(
+        &self,
+        _repo_root: &Path,
+        origin_remote_url: &str,
+    ) -> Option<ResolvedIssueSource> {
+        let remote = parse_remote(origin_remote_url)?;
+        if remote.host_kind != RemoteHostKind::AzureDevOps {
+            return None;
+        }
+        let spec = AzureDevOpsRepoSpec::from_remote_path(&remote.path)?;
+        Some(ResolvedIssueSource {
+            provider: IssueProviderKind::AzureDevOps,
+            repository: format!("{}/{}", spec.org, spec.project),
+            url: Some(spec.workitems_url()),
+            api_base_url: spec.api_base(),
+            gitlab_token_auth: GitLabTokenAuthPolicy::Disabled,
+        })
+    }
+
+    fn list_issues(
+        &self,
+        source: &ResolvedIssueSource,
+        _github_token: Option<&SecretString>,
+    ) -> Result<Vec<IssueDto>, IssueProviderError> {
+        let token = env::var("AZURE_DEVOPS_TOKEN")
+            .or_else(|_| env::var("ARBOR_AZURE_DEVOPS_TOKEN"))
+            .ok();
+        let Some(token) = token else {
+            tracing::debug!("no AZURE_DEVOPS_TOKEN set, skipping ADO issue fetch");
+            return Ok(Vec::new());
+        };
+
+        // Re-derive the spec from the repository field (org/project)
+        let parts: Vec<&str> = source.repository.splitn(2, '/').collect();
+        let (org, project) = match parts.as_slice() {
+            [org, project] => (*org, *project),
+            _ => {
+                return Err(IssueProviderError::Other(
+                    "invalid ADO repository format".to_owned(),
+                ));
+            },
+        };
+        let api_base = format!("https://dev.azure.com/{org}/{project}");
+
+        let auth_value = ado_basic_auth(&token);
+
+        // Step 1: Query work item IDs via WIQL
+        let wiql_url = format!("{api_base}/_apis/wit/wiql?api-version=7.1");
+        let wiql_query = format!(
+            "SELECT [System.Id] FROM workitems \
+             WHERE [System.TeamProject] = '{project}' \
+             AND [System.State] <> 'Closed' \
+             AND [System.State] <> 'Removed' \
+             AND [System.State] <> 'Done' \
+             ORDER BY [System.ChangedDate] DESC"
+        );
+        let wiql_body = serde_json::json!({ "query": wiql_query }).to_string();
+
+        let wiql_body_str = ureq::post(&wiql_url)
+            .header("Authorization", &auth_value)
+            .header("Content-Type", "application/json")
+            .send(&wiql_body)
+            .map_err(|e| IssueProviderError::Other(format!("ADO WIQL query failed: {e}")))?
+            .body_mut()
+            .read_to_string()
+            .map_err(|e| IssueProviderError::Other(format!("ADO WIQL read failed: {e}")))?;
+        let wiql_response: serde_json::Value = serde_json::from_str(&wiql_body_str)
+            .map_err(|e| IssueProviderError::Other(format!("ADO WIQL parse failed: {e}")))?;
+
+        let work_item_ids: Vec<i64> = wiql_response["workItems"]
+            .as_array()
+            .map(|items: &Vec<serde_json::Value>| {
+                items
+                    .iter()
+                    .filter_map(|item| item["id"].as_i64())
+                    .take(200)
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        if work_item_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Step 2: Batch-fetch work item details
+        let ids_str: String = work_item_ids
+            .iter()
+            .map(|id: &i64| id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let details_url =
+            format!("{api_base}/_apis/wit/workitems?ids={ids_str}&$expand=None&api-version=7.1");
+
+        let details_body = ureq::get(&details_url)
+            .header("Authorization", &auth_value)
+            .call()
+            .map_err(|e| IssueProviderError::Other(format!("ADO work items fetch failed: {e}")))?
+            .body_mut()
+            .read_to_string()
+            .map_err(|e| IssueProviderError::Other(format!("ADO work items read failed: {e}")))?;
+        let details_response: serde_json::Value = serde_json::from_str(&details_body)
+            .map_err(|e| IssueProviderError::Other(format!("ADO work items parse failed: {e}")))?;
+
+        let issues: Vec<IssueDto> = details_response["value"]
+            .as_array()
+            .map(|items: &Vec<serde_json::Value>| {
+                items
+                    .iter()
+                    .filter_map(|item| ado_work_item_to_issue(item, org, project))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        Ok(issues)
+    }
+}
+
+fn ado_basic_auth(token: &str) -> String {
+    use base64::Engine as _;
+    let credentials = format!(":{token}");
+    let encoded = base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes());
+    format!("Basic {encoded}")
+}
+
+fn ado_work_item_to_issue(item: &serde_json::Value, org: &str, project: &str) -> Option<IssueDto> {
+    let id = item["id"].as_i64()?;
+    let fields = &item["fields"];
+    let title = fields["System.Title"].as_str().unwrap_or("").to_owned();
+    let state_raw = fields["System.State"].as_str().unwrap_or("New");
+    let state = match state_raw {
+        "Closed" | "Removed" | "Done" | "Resolved" => "closed",
+        _ => "open",
+    }
+    .to_owned();
+    let work_item_type = fields["System.WorkItemType"]
+        .as_str()
+        .unwrap_or("")
+        .to_owned();
+    let updated_at = fields["System.ChangedDate"].as_str().map(ToOwned::to_owned);
+    let tags_str = fields["System.Tags"].as_str().unwrap_or("");
+    let mut labels: Vec<IssueLabelDto> = tags_str
+        .split(';')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|tag| IssueLabelDto {
+            name: tag.to_owned(),
+            color: None,
+        })
+        .collect();
+    if !work_item_type.is_empty() {
+        labels.insert(0, IssueLabelDto {
+            name: work_item_type,
+            color: None,
+        });
+    }
+
+    let url = format!("https://dev.azure.com/{org}/{project}/_workitems/edit/{id}");
+    let display_id = format!("#{id}");
+    let suggested_name = issue_worktree_name(&display_id, &title);
+
+    Some(IssueDto {
+        id: id.to_string(),
+        display_id,
+        title,
+        state,
+        url: Some(url),
+        body: fields["System.Description"].as_str().map(ToOwned::to_owned),
+        suggested_worktree_name: suggested_name,
+        updated_at,
+        labels,
+        issue_type: None,
+        linked_branch: None,
+        linked_review: None,
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RemoteScheme {
     Http,
@@ -661,6 +901,7 @@ enum AuthorityPortMode {
 enum RemoteHostKind {
     GitHub,
     GitLab,
+    AzureDevOps,
     Other,
 }
 
@@ -833,13 +1074,14 @@ fn strip_port_from_authority(authority: &str) -> Option<String> {
 }
 
 fn classify_remote_host(host: &str) -> RemoteHostKind {
-    match authority_host_name(host)
+    let hostname = authority_host_name(host)
         .unwrap_or(host)
-        .to_ascii_lowercase()
-        .as_str()
-    {
+        .to_ascii_lowercase();
+    match hostname.as_str() {
         "github.com" => RemoteHostKind::GitHub,
         "gitlab.com" => RemoteHostKind::GitLab,
+        "dev.azure.com" | "ssh.dev.azure.com" => RemoteHostKind::AzureDevOps,
+        other if other.ends_with(".visualstudio.com") => RemoteHostKind::AzureDevOps,
         _ => RemoteHostKind::Other,
     }
 }
@@ -931,7 +1173,7 @@ where
     F: FnOnce(&RemoteSpec) -> bool,
 {
     let is_gitlab = match remote.host_kind {
-        RemoteHostKind::GitHub => false,
+        RemoteHostKind::GitHub | RemoteHostKind::AzureDevOps => false,
         RemoteHostKind::GitLab => true,
         RemoteHostKind::Other => supports_custom_instance(remote),
     };
@@ -1000,7 +1242,7 @@ fn gitlab_token_auth_policy(
                 }
             })
             .unwrap_or(GitLabTokenAuthPolicy::Disabled),
-        RemoteHostKind::GitHub => GitLabTokenAuthPolicy::Disabled,
+        RemoteHostKind::GitHub | RemoteHostKind::AzureDevOps => GitLabTokenAuthPolicy::Disabled,
     }
 }
 
@@ -1077,6 +1319,7 @@ fn percent_encode(input: &str) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 
@@ -1247,5 +1490,121 @@ mod tests {
             normalize_issue_body(Some("Line one\n\n- bullet".to_owned())),
             Some("Line one\n\n- bullet".to_owned())
         );
+    }
+
+    #[test]
+    fn classify_remote_host_detects_azure_devops() {
+        assert_eq!(
+            classify_remote_host("dev.azure.com"),
+            RemoteHostKind::AzureDevOps
+        );
+        assert_eq!(
+            classify_remote_host("ssh.dev.azure.com"),
+            RemoteHostKind::AzureDevOps
+        );
+        assert_eq!(
+            classify_remote_host("myorg.visualstudio.com"),
+            RemoteHostKind::AzureDevOps
+        );
+    }
+
+    #[test]
+    fn classify_remote_host_does_not_match_non_ado_hosts() {
+        assert_eq!(classify_remote_host("github.com"), RemoteHostKind::GitHub);
+        assert_eq!(classify_remote_host("gitlab.com"), RemoteHostKind::GitLab);
+        assert_eq!(classify_remote_host("example.com"), RemoteHostKind::Other);
+    }
+
+    #[test]
+    fn azure_devops_repo_spec_from_https_path() {
+        let spec = AzureDevOpsRepoSpec::from_remote_path("myorg/myproject/_git/myrepo").unwrap();
+        assert_eq!(spec.org, "myorg");
+        assert_eq!(spec.project, "myproject");
+        assert_eq!(spec.repo, "myrepo");
+    }
+
+    #[test]
+    fn azure_devops_repo_spec_from_ssh_path() {
+        let spec = AzureDevOpsRepoSpec::from_remote_path("v3/myorg/myproject/myrepo").unwrap();
+        assert_eq!(spec.org, "myorg");
+        assert_eq!(spec.project, "myproject");
+        assert_eq!(spec.repo, "myrepo");
+    }
+
+    #[test]
+    fn azure_devops_repo_spec_strips_git_suffix() {
+        let spec =
+            AzureDevOpsRepoSpec::from_remote_path("myorg/myproject/_git/myrepo.git").unwrap();
+        assert_eq!(spec.repo, "myrepo");
+    }
+
+    #[test]
+    fn azure_devops_repo_spec_returns_none_for_invalid_path() {
+        assert!(AzureDevOpsRepoSpec::from_remote_path("").is_none());
+        assert!(AzureDevOpsRepoSpec::from_remote_path("onlyone").is_none());
+        assert!(AzureDevOpsRepoSpec::from_remote_path("two/parts").is_none());
+    }
+
+    #[test]
+    fn azure_devops_issue_provider_resolves_ado_remote() {
+        let provider = AzureDevOpsIssueProvider;
+        let source = provider
+            .resolve_source(
+                Path::new("/tmp"),
+                "https://dev.azure.com/myorg/myproject/_git/myrepo",
+            )
+            .unwrap();
+        assert_eq!(source.provider, IssueProviderKind::AzureDevOps);
+        assert_eq!(source.repository, "myorg/myproject");
+        assert!(source.url.as_ref().unwrap().contains("_workitems"));
+    }
+
+    #[test]
+    fn azure_devops_issue_provider_ignores_github_remote() {
+        let provider = AzureDevOpsIssueProvider;
+        assert!(
+            provider
+                .resolve_source(Path::new("/tmp"), "https://github.com/owner/repo")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn ado_work_item_to_issue_maps_fields() {
+        let item = serde_json::json!({
+            "id": 42,
+            "fields": {
+                "System.Title": "Fix the bug",
+                "System.State": "Active",
+                "System.WorkItemType": "Bug",
+                "System.ChangedDate": "2024-01-15T10:00:00Z",
+                "System.Tags": "frontend; urgent",
+                "System.Description": "Something is broken"
+            }
+        });
+        let issue = ado_work_item_to_issue(&item, "myorg", "myproject").unwrap();
+        assert_eq!(issue.id, "42");
+        assert_eq!(issue.display_id, "#42");
+        assert_eq!(issue.title, "Fix the bug");
+        assert_eq!(issue.state, "open");
+        assert_eq!(issue.labels.len(), 3); // Bug + frontend + urgent
+        assert_eq!(issue.labels[0].name, "Bug");
+        assert_eq!(issue.labels[1].name, "frontend");
+        assert_eq!(issue.labels[2].name, "urgent");
+        assert!(issue.url.unwrap().contains("_workitems/edit/42"));
+    }
+
+    #[test]
+    fn ado_work_item_closed_state_maps_correctly() {
+        let item = serde_json::json!({
+            "id": 99,
+            "fields": {
+                "System.Title": "Done item",
+                "System.State": "Closed",
+                "System.WorkItemType": "Task"
+            }
+        });
+        let issue = ado_work_item_to_issue(&item, "org", "proj").unwrap();
+        assert_eq!(issue.state, "closed");
     }
 }
