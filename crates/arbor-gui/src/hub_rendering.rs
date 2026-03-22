@@ -706,27 +706,14 @@ impl ArborWindow {
                                             Self::handle_terminal_output_mouse_up,
                                         ),
                                     )
-                                    .child(
-                                        div()
-                                            .w_full()
-                                            .min_w_0()
-                                            .flex_none()
-                                            .flex()
-                                            .flex_col()
-                                            .gap_0()
-                                            .children(styled_lines.into_iter().map(
-                                                |line| {
-                                                    render_terminal_line_with_font_size(
-                                                        line,
-                                                        theme,
-                                                        cell_width,
-                                                        line_height,
-                                                        mono_font.clone(),
-                                                        font_size,
-                                                    )
-                                                },
-                                            )),
-                                    ),
+                                    .child(render_hub_terminal_canvas(
+                                        styled_lines,
+                                        theme,
+                                        cell_width,
+                                        line_height,
+                                        mono_font.clone(),
+                                        font_size,
+                                    )),
                             ),
                     )
             })

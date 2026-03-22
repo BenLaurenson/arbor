@@ -545,6 +545,131 @@ pub(crate) fn render_terminal_line_with_font_size(
         )
 }
 
+/// Render all terminal lines in a single canvas element for hub panes.
+/// This replaces ~220 separate div+canvas elements with one canvas that paints
+/// all lines directly, eliminating per-line layout overhead.
+/// Returns a div with height = total_lines * line_height (for scroll sizing)
+/// containing a single canvas that paints only the visible portion.
+pub(crate) fn render_hub_terminal_canvas(
+    styled_lines: Vec<TerminalStyledLine>,
+    theme: ThemePalette,
+    cell_width: f32,
+    line_height: f32,
+    mono_font: gpui::Font,
+    font_size_px: f32,
+) -> Div {
+    let total_height = styled_lines.len() as f32 * line_height;
+    let lh = px(line_height);
+    let fs = px(font_size_px);
+
+    // Pre-compute positioned runs for each line (done once, not per frame)
+    let line_runs: Vec<Vec<PositionedTerminalRun>> = styled_lines
+        .into_iter()
+        .map(|line| {
+            let cells = if line.cells.is_empty() {
+                cells_from_runs(&line.runs)
+            } else {
+                line.cells
+            };
+            positioned_runs_from_cells(&cells)
+        })
+        .collect();
+
+    div()
+        .flex_none()
+        .w_full()
+        .min_w_0()
+        .h(px(total_height))
+        .overflow_hidden()
+        .child(
+            canvas(
+                |_, _, _| {},
+                move |bounds, _, window, cx| {
+                    let scale_factor = window.scale_factor();
+
+                    // Calculate visible line range from bounds
+                    // bounds.origin.y is the top of this element in window coords
+                    // bounds.size.height is how much is visible
+                    let visible_height = bounds.size.height.to_f64() as f32;
+                    let first_line = 0_usize;
+                    let last_line =
+                        ((visible_height / line_height).ceil() as usize + 1).min(line_runs.len());
+
+                    // Paint background for the entire visible area first
+                    window.paint_quad(fill(bounds, rgb(theme.terminal_bg)));
+
+                    for (line_idx, runs) in line_runs
+                        .iter()
+                        .enumerate()
+                        .take(last_line)
+                        .skip(first_line)
+                    {
+                        let line_y = bounds.origin.y + px(line_idx as f32 * line_height);
+
+                        for run in runs {
+                            if run.text.is_empty() {
+                                continue;
+                            }
+
+                            // Draw background quad
+                            if run.cell_count > 0 {
+                                let start_x = snap_pixels_floor(
+                                    bounds.origin.x + px(run.start_column as f32 * cell_width),
+                                    scale_factor,
+                                );
+                                let end_x = snap_pixels_ceil(
+                                    bounds.origin.x
+                                        + px(
+                                            (run.start_column + run.cell_count) as f32 * cell_width
+                                        ),
+                                    scale_factor,
+                                );
+                                let bg_origin = point(start_x, line_y);
+                                let bg_size = size((end_x - start_x).max(px(0.)), lh);
+                                window
+                                    .paint_quad(fill(Bounds::new(bg_origin, bg_size), rgb(run.bg)));
+                            }
+
+                            // Shape and paint text
+                            let is_powerline = should_force_powerline(run);
+                            let force_cell = run.force_cell_width || is_powerline;
+                            let force_width = if force_cell {
+                                Some(px(cell_width))
+                            } else {
+                                None
+                            };
+
+                            let shaped_line = window.text_system().shape_line(
+                                run.text.clone().into(),
+                                fs,
+                                &[TextRun {
+                                    len: run.text.len(),
+                                    font: mono_font.clone(),
+                                    color: rgb(run.fg).into(),
+                                    background_color: None,
+                                    underline: None,
+                                    strikethrough: None,
+                                }],
+                                force_width,
+                            );
+
+                            let run_origin =
+                                bounds.origin.x + px(run.start_column as f32 * cell_width);
+                            let run_x = if is_powerline || force_cell {
+                                run_origin
+                            } else {
+                                run_origin.floor()
+                            };
+
+                            let _ = shaped_line.paint(point(run_x, line_y), lh, window, cx);
+                        }
+                    }
+                },
+            )
+            .size_full(),
+        )
+}
+
 pub(crate) fn should_force_powerline(run: &PositionedTerminalRun) -> bool {
     run.text.chars().count() == 1
         && run
